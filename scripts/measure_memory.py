@@ -9,17 +9,19 @@ How the job is built:
 - MAX_URLS_PER_REQUEST synthetic sites (10 by default). For each site the fetcher serves
   a homepage and its subpages, each just under FETCH_MAX_BYTES of HTML, which is the
   largest page the real HTTP fetcher accepts.
-- The pages are generated when fetched and go through the same build_page() code as
-  downloaded pages, so only a few exist in memory at a time, as in production.
+- The pages are generated when fetched and go through the same code as downloaded pages:
+  they are parsed in the page parser's child process (screener.page_parser), so only a
+  few exist in memory at a time, as in production.
 
 It submits N screenings at once, waits for all of them, and prints:
-- the peak memory of the whole process (Windows: peak working set; Linux: ru_maxrss);
-- the CPU time and wall time;
+- the peak memory of the app process and of the parser's child process (Windows: peak
+  working set; Linux: VmHWM). Their sum is an upper bound: the two peaks need not happen
+  at the same moment;
+- the CPU time of both processes and the wall time;
 - how long /healthz took to answer while the job ran, asked about once a second from a
-  separate thread. HTML parsing runs in the event loop, so this is how long an external
-  health check would wait.
+  separate thread, as an external health check would.
 
-The numbers include the interpreter and all imports. They are measurements on this
+The numbers include the interpreters and all imports. They are measurements on this
 machine, not guarantees for another OS or allocator.
 """
 
@@ -27,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import socket
 import sys
 import threading
@@ -38,8 +41,9 @@ import uvicorn
 
 from screener.config import Settings
 from screener.fake_llm import FakeAnthropicClient
-from screener.fetcher import FetchedPage, build_page_in_thread
+from screener.fetcher import FetchedPage, build_page_in_parser
 from screener.fixtures import FixtureFetcher
+from screener.page_parser import PAGE_PARSER
 from screener.web import create_app
 
 SUBPAGES = ("about", "company", "contact", "locations")
@@ -91,8 +95,9 @@ class LargePageFetcher(FixtureFetcher):
         path = normalized.split("/", 3)[3] if normalized.count("/") >= 3 else ""
         body = big_html(site, path, self._settings.fetch_max_bytes - 1000).encode()
         LargePageFetcher.served += 1
-        # Same as HttpFetcher: parsed in the parser thread.
-        return await build_page_in_thread(
+        # Same as HttpFetcher: parsed in the parser's child process.
+        return await build_page_in_parser(
+            PAGE_PARSER,
             requested_url=normalized,
             final_url=normalized,
             status_code=200,
@@ -102,7 +107,8 @@ class LargePageFetcher(FixtureFetcher):
         )
 
 
-def peak_memory_mb() -> float:
+def process_stats(pid: int) -> tuple[float, float]:
+    """(peak memory in MB, CPU seconds) of a running process: this one or the parser."""
     if sys.platform == "win32":
         import ctypes
         from ctypes import wintypes
@@ -121,23 +127,32 @@ def peak_memory_mb() -> float:
                 ("PeakPagefileUsage", ctypes.c_size_t),
             ]
 
-        counters = Counters()
-        counters.cb = ctypes.sizeof(Counters)
         kernel32 = ctypes.WinDLL("kernel32")
         psapi = ctypes.WinDLL("psapi")
-        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
         psapi.GetProcessMemoryInfo.argtypes = [
             wintypes.HANDLE,
             ctypes.POINTER(Counters),
             wintypes.DWORD,
         ]
-        psapi.GetProcessMemoryInfo(
-            kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb
-        )
-        return counters.PeakWorkingSetSize / 2**20
-    import resource
-
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024  # Linux: kilobytes
+        query_limited_information, vm_read = 0x1000, 0x0010
+        handle = kernel32.OpenProcess(query_limited_information | vm_read, False, pid)
+        try:
+            counters = Counters()
+            counters.cb = ctypes.sizeof(Counters)
+            psapi.GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.cb)
+            times = [ctypes.c_ulonglong() for _ in range(4)]  # created, exited, kernel, user
+            kernel32.GetProcessTimes(handle, *(ctypes.byref(t) for t in times))
+        finally:
+            kernel32.CloseHandle(handle)
+        return counters.PeakWorkingSetSize / 2**20, (times[2].value + times[3].value) / 1e7
+    with open(f"/proc/{pid}/status") as status:
+        fields = dict(line.split(":", 1) for line in status)
+    with open(f"/proc/{pid}/stat") as stat:
+        ticks = stat.read().rsplit(")", 1)[1].split()  # utime and stime are fields 14 and 15
+    cpu = (int(ticks[11]) + int(ticks[12])) / os.sysconf("SC_CLK_TCK")
+    return int(fields["VmHWM"].split()[0]) / 1024, cpu
 
 
 def probe_healthz(url: str, stop: threading.Event, latencies: list[float]) -> None:
@@ -194,7 +209,7 @@ async def main(runs: int, concurrency: int, max_bytes: int) -> None:
     serving = asyncio.create_task(server.serve())
     while not server.started:  # noqa: ASYNC110 - uvicorn only exposes a flag, not an event
         await asyncio.sleep(0.05)
-    baseline = peak_memory_mb()
+    baseline = process_stats(os.getpid())[0]
     cpu, wall = time.process_time(), time.perf_counter()
     stop_probe, latencies = threading.Event(), []
     prober = threading.Thread(
@@ -222,6 +237,11 @@ async def main(runs: int, concurrency: int, max_bytes: int) -> None:
         done = [(await client.get(loc + "/export.json")).json() for loc in locations]
     server.should_exit = True
     await serving
+    # The parser's child started during the job, so all of its CPU time belongs to it.
+    app_peak = process_stats(os.getpid())[0]
+    parser_peak, parser_cpu = process_stats(PAGE_PARSER.pid) if PAGE_PARSER.pid else (0.0, 0.0)
+    parsers_started = PAGE_PARSER.started
+    PAGE_PARSER.stop()
     latencies.sort()
     statuses = [r["status"] for run in done for r in run["results"]]
     print(
@@ -229,9 +249,15 @@ async def main(runs: int, concurrency: int, max_bytes: int) -> None:
         f"page size: {settings.fetch_max_bytes - 1000:,} bytes"
     )
     print(f"pages processed: {LargePageFetcher.served}; result statuses: {sorted(set(statuses))}")
-    print(f"peak memory before the runs (imports, app): {baseline:.0f} MB")
-    print(f"peak memory during the runs: {peak_memory_mb():.0f} MB")
-    print(f"CPU time: {cpu:.1f} s; wall time: {wall:.1f} s")
+    print(f"peak memory of the app before the runs (imports, app): {baseline:.0f} MB")
+    print(
+        f"peak memory during the runs: app {app_peak:.0f} MB + parser {parser_peak:.0f} MB "
+        f"= at most {app_peak + parser_peak:.0f} MB (parser processes started: {parsers_started})"
+    )
+    print(
+        f"CPU time: app {cpu:.1f} s + parser {parser_cpu:.1f} s = {cpu + parser_cpu:.1f} s; "
+        f"wall time: {wall:.1f} s"
+    )
     print(
         f"/healthz during the job: {len(latencies)} checks; median "
         f"{latencies[len(latencies) // 2]:.2f} s, max {latencies[-1]:.2f} s; "
@@ -245,4 +271,8 @@ if __name__ == "__main__":
     parser.add_argument("--concurrency", type=int, default=2, help="CONCURRENCY setting")
     parser.add_argument("--max-bytes", type=int, default=2_000_000, help="FETCH_MAX_BYTES setting")
     args = parser.parse_args()
+    # multiprocessing imports a script again in each child process it starts, and with this
+    # one the whole web app. In production (python -m uvicorn) the parser's child does not
+    # load it, so the measurement must not either. Without a file name, it is not imported.
+    del sys.modules["__main__"].__file__
     asyncio.run(main(args.runs, args.concurrency, args.max_bytes))

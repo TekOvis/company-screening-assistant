@@ -14,18 +14,17 @@ implementation of the same interface, without making a browser a required depend
 from __future__ import annotations
 
 import asyncio
+import logging
 import random
 from collections.abc import Awaitable, Callable
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from functools import partial
-from typing import Any, Protocol
+from typing import Protocol
 from urllib.parse import urljoin
 
 import httpx
 
 from .config import Settings
-from .html_text import PageLink, extract_page, same_site
+from .html_text import ExtractedPage, PageLink, extract_page, same_site
 from .netguard import (
     BlockedAddressError,
     ResolutionError,
@@ -36,6 +35,9 @@ from .netguard import (
     resolve_public_addresses,
     system_resolver,
 )
+from .page_parser import PAGE_PARSER, PageParser, ParserError
+
+logger = logging.getLogger(__name__)
 
 USER_AGENT = "CompanyScreeningAssistant/0.1 (educational prototype)"
 ALLOWED_MIME_TYPES = {"text/html", "application/xhtml+xml", "text/plain"}
@@ -101,20 +103,68 @@ def build_page(
     body: bytes,
     settings: Settings,
 ) -> FetchedPage:
-    """Shared by all fetchers so text extraction is identical everywhere."""
+    """Shared by all fetchers so text extraction is identical everywhere. Parses in the
+    calling thread: for small saved pages (fixtures, tests)."""
+    mime_type, charset = _checked_content_type(content_type)
+    extracted = extract_page(body, **_extract_options(final_url, mime_type, charset, settings))
+    return _fetched_page(extracted, requested_url, final_url, status_code, mime_type)
+
+
+async def build_page_in_parser(
+    parser: PageParser,
+    *,
+    requested_url: str,
+    final_url: str,
+    status_code: int,
+    content_type: str,
+    body: bytes,
+    settings: Settings,
+) -> FetchedPage:
+    """build_page() with the parsing done in the parser's child process (see page_parser).
+
+    Downloaded pages go here: a large page takes seconds of CPU, which must not block the
+    event loop, and a page that never finishes must be stoppable. The caller's time limit
+    (FETCH_TOTAL_TIMEOUT_S for the page, RUN_TIMEOUT_S for the screening) stops the parse.
+    """
+    mime_type, charset = _checked_content_type(content_type)
+    try:
+        extracted = await parser.extract(
+            body, **_extract_options(final_url, mime_type, charset, settings)
+        )
+    except ParserError as exc:
+        logger.warning("could not parse %s: %s", final_url, exc)
+        raise FetchError("parse_error", "the page could not be processed") from exc
+    return _fetched_page(extracted, requested_url, final_url, status_code, mime_type)
+
+
+def _checked_content_type(content_type: str) -> tuple[str, str | None]:
     mime_type, charset = parse_content_type(content_type)
     if mime_type not in ALLOWED_MIME_TYPES:
         raise FetchError(
             "unsupported_content", f"unsupported content type: {mime_type or 'unknown'}"
         )
-    extracted = extract_page(
-        body,
-        base_url=final_url,
-        mime_type=mime_type,
-        charset=charset,
-        max_chars=settings.page_text_max_chars,
-        max_links=settings.max_links_per_page,
-    )
+    return mime_type, charset
+
+
+def _extract_options(
+    final_url: str, mime_type: str, charset: str | None, settings: Settings
+) -> dict[str, object]:
+    return {
+        "base_url": final_url,
+        "mime_type": mime_type,
+        "charset": charset,
+        "max_chars": settings.page_text_max_chars,
+        "max_links": settings.max_links_per_page,
+    }
+
+
+def _fetched_page(
+    extracted: ExtractedPage,
+    requested_url: str,
+    final_url: str,
+    status_code: int,
+    mime_type: str,
+) -> FetchedPage:
     return FetchedPage(
         requested_url=requested_url,
         url=final_url,
@@ -125,20 +175,6 @@ def build_page(
         links=extracted.links,
         truncated=extracted.truncated,
     )
-
-
-# Parsing a large page takes a second or more of CPU. In this thread it does not block the
-# event loop, so the app keeps answering other requests and the health check meanwhile.
-# One thread only: parsing is CPU-bound Python, so more threads would not be faster (the
-# GIL), but would hold more pages in memory at once and slow the event loop down more.
-_PARSER = ThreadPoolExecutor(max_workers=1, thread_name_prefix="html-parse")
-
-
-async def build_page_in_thread(**kwargs: Any) -> FetchedPage:
-    """build_page() in the parser thread. If the caller is cancelled (a time limit), the
-    thread still finishes the page, and the result is dropped."""
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(_PARSER, partial(build_page, **kwargs))
 
 
 def parse_content_type(value: str) -> tuple[str, str | None]:
@@ -174,6 +210,8 @@ class HttpFetcher:
       own DNS lookup and bypass the address check.
     * Connections are not reused between requests (no keep-alive), so a TLS connection
       verified for one host name is never reused for another host on the same IP.
+    * Pages are parsed in a child process that a time limit can stop (see page_parser);
+      the page's total time limit includes the parsing.
     """
 
     def __init__(
@@ -183,10 +221,12 @@ class HttpFetcher:
         resolver: Resolver = system_resolver,
         transport: httpx.AsyncBaseTransport | None = None,
         sleep: Sleep = asyncio.sleep,
+        parser: PageParser = PAGE_PARSER,
     ) -> None:
         self._settings = settings
         self._resolver = resolver
         self._sleep = sleep
+        self._parser = parser
         timeout = httpx.Timeout(
             connect=settings.fetch_connect_timeout_s,
             read=settings.fetch_read_timeout_s,
@@ -267,7 +307,8 @@ class HttpFetcher:
                 body = await self._read_limited(response)
             finally:
                 await response.aclose()
-            return await build_page_in_thread(
+            return await build_page_in_parser(
+                self._parser,
                 requested_url=requested_url,
                 final_url=target.url,
                 status_code=response.status_code,

@@ -2,23 +2,24 @@
 machine, and each test controls DNS answers through a fake resolver. Retries use a fake
 sleep, so the tests never actually wait."""
 
+import os
 import socket
-import threading
 
 import httpx
 import pytest
 
-from screener import fetcher as fetcher_module
 from screener.fetcher import FetchError, HttpFetcher
 from screener.netguard import BlockedAddressError, UnsafeURLError
+from screener.page_parser import PAGE_PARSER, PageParser
 
+from . import parse_targets
 from .conftest import ACME_HOME, make_settings
 
 PUBLIC_IP = "93.184.216.34"
 OTHER_PUBLIC_IP = "93.184.216.35"
 
 
-def _fetcher(handler, dns, *, sleeps=None, **settings_overrides) -> HttpFetcher:
+def _fetcher(handler, dns, *, sleeps=None, parser=PAGE_PARSER, **settings_overrides):
     async def resolver(host, port):
         if host not in dns:
             raise socket.gaierror("unknown host")
@@ -33,7 +34,15 @@ def _fetcher(handler, dns, *, sleeps=None, **settings_overrides) -> HttpFetcher:
         resolver=resolver,
         transport=httpx.MockTransport(handler),
         sleep=fake_sleep,
+        parser=parser,
     )
+
+
+@pytest.fixture
+def test_parser():
+    parser = PageParser(target=parse_targets.extract_for_tests)
+    yield parser
+    parser.stop()
 
 
 def _html(body: str = ACME_HOME, status: int = 200, **headers) -> httpx.Response:
@@ -66,24 +75,26 @@ async def test_connects_to_checked_ip_with_original_host_and_sni():
 
 
 @pytest.mark.anyio
-async def test_pages_are_parsed_in_the_parser_thread_not_in_the_event_loop(monkeypatch):
+async def test_downloaded_pages_are_parsed_in_the_parser_process(test_parser):
     """Parsing a 1 MB page takes seconds of CPU on the small server. Done in the event loop,
-    it delayed /healthz past the health check's 5 s timeout during a large job."""
-    threads = []
-    real_build_page = fetcher_module.build_page
-
-    def recording_build_page(**kwargs):
-        threads.append(threading.current_thread())
-        return real_build_page(**kwargs)
-
-    monkeypatch.setattr(fetcher_module, "build_page", recording_build_page)
-    async with _fetcher(lambda request: _html(), {"acme.com": [PUBLIC_IP]}) as fetcher:
+    it delayed /healthz past the health check's 5 s timeout during a large job; done in a
+    thread, a page that never finished blocked every later page."""
+    body = parse_targets.REPORT_PID.decode()
+    dns = {"acme.com": [PUBLIC_IP]}
+    async with _fetcher(lambda request: _html(body), dns, parser=test_parser) as fetcher:
         page = await fetcher.fetch("acme.com")
+    assert int(page.title) == test_parser.pid != os.getpid()
 
-    assert "headquartered in Stuttgart" in page.text
-    assert len(threads) == 1
-    assert threads[0] is not threading.current_thread()  # not the event loop's thread
-    assert threads[0].name.startswith("html-parse")
+
+@pytest.mark.anyio
+async def test_a_page_the_parser_cannot_process_is_a_fetch_error(test_parser):
+    body = parse_targets.RAISE.decode()
+    dns = {"acme.com": [PUBLIC_IP]}
+    async with _fetcher(lambda request: _html(body), dns, parser=test_parser) as fetcher:
+        with pytest.raises(FetchError) as caught:
+            await fetcher.fetch("acme.com")
+    assert caught.value.kind == "parse_error"
+    assert caught.value.message == "the page could not be processed"
 
 
 @pytest.mark.anyio
