@@ -7,6 +7,12 @@
 <h1>Screening results</h1>
 
 <section class="run-summary">
+  {% if run.example_id %}
+  <p class="example-note">Synthetic example <code>{{ run.example_id }}</code>: an invented
+    company on saved pages. Expected label:
+    <span class="badge badge-{{ run.example_expected }}">{{ run.example_expected }}</span>
+    <a href="/examples">Other examples</a></p>
+  {% endif %}
   <p>
     {% if run.status == "running" %}
       <strong>Processing…</strong> {{ results|length }} of {{ run.urls|length }} companies done.

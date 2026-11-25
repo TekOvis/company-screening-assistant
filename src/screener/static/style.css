@@ -27,6 +27,16 @@ a { color: var(--accent); }
 .mode-mock { background: #fff4d6; color: #6b4b00; border: 1px solid #e8cf86; }
 .mode-live { background: #e7f0ff; color: #163f80; border: 1px solid #b8cdf3; }
 
+.mock-banner {
+  padding: 0.7rem 1.5rem; background: #fff4d6; color: #4d3600;
+  border-bottom: 2px solid #e8cf86; font-size: 0.95rem;
+}
+.example-list { list-style: none; padding: 0; display: grid; gap: 1rem; max-width: 900px; }
+.example { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; }
+.example h2 { font-size: 1.1rem; margin: 0 0 0.5rem; }
+.example button { margin-top: 0.6rem; }
+.example-note { background: #f0f2f6; border-radius: 6px; padding: 0.5rem 0.75rem; }
+
 .site-footer { max-width: 1600px; margin: 0 auto; padding: 1rem 1.5rem 2rem; color: var(--muted); font-size: 0.85rem; }
 
 .lead { color: var(--muted); max-width: 70ch; }

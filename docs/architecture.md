@@ -59,6 +59,7 @@ never switches to another one on its own.
 | `pipeline.py` | per-company orchestration and bounded concurrency |
 | `web.py`, `templates/`, `static/` | form, results table, exports, JSON API, in-memory run store, access middleware |
 | `demo.py` | public-demo protection: session cookie, rate limiter, daily budget |
+| `examples.py` | ready-made synthetic examples for the demo, run on saved pages |
 | `export.py` | JSON and CSV export, CSV formula protection |
 | `fake_llm.py` | mock client: returns real SDK message objects built from keyword rules |
 | `evaluate.py`, `metrics.py`, `pricing.py`, `eval_dataset.py` | offline evaluation |

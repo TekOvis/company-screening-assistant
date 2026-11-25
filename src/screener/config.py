@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     public_demo: bool = False
     demo_access_token: SecretStr | None = None  # when set, every page needs it
     cookie_secure: bool = False  # set true behind HTTPS
+    demo_examples: bool = False  # /examples: synthetic cases on saved pages (screener.examples)
     runs_per_ip_per_hour: int = Field(default=10, ge=1, le=1000)
     login_attempts_per_ip_per_15_min: int = Field(default=10, ge=1, le=100)
     daily_max_companies: int = Field(default=200, ge=1)

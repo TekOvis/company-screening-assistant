@@ -28,6 +28,13 @@
       </form>
     {% endif %}
   </header>
+  {% if backend == "mock" %}
+  <div class="mock-banner" role="note">
+    <strong>Mock demo.</strong> Answers come from simple keyword rules, not from a language
+    model. Use it to try the interface and the pipeline (page fetching, evidence checks, label
+    rules, exports). It does <strong>not</strong> show the quality of an LLM.
+  </div>
+  {% endif %}
   <main>
     {% block content %}{% endblock %}
   </main>

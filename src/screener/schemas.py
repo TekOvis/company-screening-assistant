@@ -242,6 +242,8 @@ class ScreeningRun(BaseModel):
     results: list[CompanyResult] = Field(default_factory=list)
     error: str | None = None
     stop_reason: str | None = None  # e.g. the API spend limit was reached
+    example_id: str | None = None  # set for a synthetic demo example (screener.examples)
+    example_expected: FitLabel | None = None  # that example's expected label
     disclaimer: str = DISCLAIMER
 
     @computed_field  # included in JSON exports

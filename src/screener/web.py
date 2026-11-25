@@ -27,8 +27,10 @@ from . import __version__
 from .budget import RunBudget
 from .config import Settings, get_settings
 from .demo import SESSION_COOKIE, DailyBudget, RateLimiter, same_secret, session_value
+from .examples import load_examples
 from .export import run_to_csv, run_to_json
 from .fetcher import HttpFetcher, PageFetcher
+from .fixtures import FixtureFetcher
 from .llm import create_client, model_label
 from .netguard import UnsafeURLError
 from .pipeline import screen_companies
@@ -137,6 +139,9 @@ def create_app(
     run_limiter = RateLimiter(settings.runs_per_ip_per_hour, 3600)
     login_limiter = RateLimiter(settings.login_attempts_per_ip_per_15_min, 900)
     daily = DailyBudget(settings.daily_max_companies, settings.daily_max_tokens)
+    examples = load_examples() if settings.demo_examples else {}
+    if settings.demo_examples and not examples:
+        logger.warning("DEMO_EXAMPLES is on, but no example cases were found")
 
     templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
     templates.env.filters["safe_href"] = safe_href
@@ -158,6 +163,7 @@ def create_app(
             "model": model_label(settings),
             "max_urls": settings.max_urls_per_request,
             "auth_enabled": access_token is not None,
+            "examples_enabled": bool(examples),
             **extra,
         }
 
@@ -243,6 +249,28 @@ def create_app(
             run.finished_at = utc_now()
             daily.settle(token_cap, run_budget.used_tokens)
             await fetcher.aclose()
+
+    def new_run(criteria: ScreeningCriteria, urls: list[str]) -> ScreeningRun:
+        return ScreeningRun(
+            run_id=secrets.token_urlsafe(12),
+            backend=settings.llm_backend,
+            model=model_label(settings),
+            criteria=criteria,
+            urls=urls,
+        )
+
+    async def launch(run: ScreeningRun, fetcher: PageFetcher, token_cap: int) -> bool:
+        """Store the run and start it in the background; False if the store is full."""
+        try:
+            runs.add(run)
+        except StoreFullError:
+            daily.settle(token_cap, 0)
+            await fetcher.aclose()
+            return False
+        task = asyncio.create_task(execute_run(run, fetcher, token_cap))
+        tasks.add(task)
+        task.add_done_callback(tasks.discard)
+        return True
 
     def get_run_or_404(run_id: str) -> ScreeningRun:
         run = runs.get(run_id)
@@ -341,24 +369,44 @@ def create_app(
             return templates.TemplateResponse(
                 request, "index.html", context(form=form, errors=[refusal]), status_code=429
             )
-        run = ScreeningRun(
-            run_id=secrets.token_urlsafe(12),
-            backend=settings.llm_backend,
-            model=model_label(settings),
-            criteria=criteria,
-            urls=url_list,
-        )
-        try:
-            runs.add(run)
-        except StoreFullError:
-            daily.settle(token_cap, 0)
-            await fetcher.aclose()
+        run = new_run(criteria, url_list)
+        if not await launch(run, fetcher, token_cap):
             return templates.TemplateResponse(
                 request, "index.html", context(form=form, errors=[BUSY_MESSAGE]), status_code=429
             )
-        task = asyncio.create_task(execute_run(run, fetcher, token_cap))
-        tasks.add(task)
-        task.add_done_callback(tasks.discard)
+        return RedirectResponse(url=f"/runs/{run.run_id}", status_code=303)
+
+    @app.get("/examples", response_class=HTMLResponse)
+    async def list_examples(request: Request) -> Response:
+        if not examples:
+            raise HTTPException(status_code=404, detail="examples are not enabled")
+        return templates.TemplateResponse(
+            request, "examples.html", context(examples=examples, errors=[])
+        )
+
+    @app.post("/examples/{case_id}", response_class=HTMLResponse)
+    async def run_example(request: Request, case_id: str) -> Response:
+        """Run one synthetic example on its saved pages, under the same limits as /screen."""
+        example = examples.get(case_id)
+        if example is None:
+            raise HTTPException(status_code=404, detail="unknown example")
+
+        def refuse(message: str) -> Response:
+            return templates.TemplateResponse(
+                request, "examples.html", context(examples=examples, errors=[message]), 429
+            )
+
+        if runs.active_count() >= settings.max_active_runs:
+            return refuse(BUSY_MESSAGE)
+        token_cap, refusal = admit_run(client_ip(request), 1)
+        if refusal:
+            return refuse(refusal)
+        case = example.case
+        fetcher = FixtureFetcher(case.fixture_pages(), settings)
+        run = new_run(case.criteria, [fetcher.normalize(case.start_url)])
+        run.example_id, run.example_expected = case.id, case.expected.fit
+        if not await launch(run, fetcher, token_cap):
+            return refuse(BUSY_MESSAGE)
         return RedirectResponse(url=f"/runs/{run.run_id}", status_code=303)
 
     @app.get("/runs/{run_id}", response_class=HTMLResponse)

@@ -4,6 +4,9 @@
 <p class="lead">Paste up to {{ max_urls }} company website URLs and describe what you are
   looking for. Each site's text is checked against your criteria; facts that the site does
   not state are left empty instead of guessed.</p>
+{% if examples_enabled %}
+<p class="lead">No URLs at hand? <a href="/examples">Try a ready-made synthetic example.</a></p>
+{% endif %}
 
 {% if errors %}
 <div class="errors" role="alert">
