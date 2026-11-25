@@ -1,4 +1,4 @@
-"""Tests of the LLM call logic with a scripted fake client (no API, no network)."""
+"""Tests of the assessment step with a scripted fake client (no API, no network)."""
 
 import json
 
@@ -6,9 +6,12 @@ import anthropic
 import httpx2
 import pytest
 
-from screener.agent import ASSESSMENT_SCHEMA, assess_company, describe_api_error
+from screener.agent import ASSESSMENT_SCHEMA, assess_company
+from screener.budget import CompanyBudget, RunBudget
 from screener.fake_llm import FakeAnthropicClient, make_message, text_message
-from screener.schemas import ScreeningCriteria
+from screener.schemas import ScreeningCriteria, Usage
+
+from .conftest import make_settings
 
 CRITERIA = ScreeningCriteria(
     industry="industrial valves",
@@ -40,7 +43,12 @@ VALID_ANSWER = {
 
 async def _run(client, settings, acme_fetcher):
     homepage = await acme_fetcher.fetch("https://acme-valves.example/")
-    return await assess_company(client, settings, CRITERIA, homepage, acme_fetcher)
+    budget = CompanyBudget.from_settings(RunBudget.from_settings(settings), settings)
+    usage = Usage()
+    outcome = await assess_company(
+        client, settings, CRITERIA, homepage, acme_fetcher, budget=budget, usage=usage
+    )
+    return outcome, usage
 
 
 @pytest.mark.anyio
@@ -48,11 +56,11 @@ async def test_valid_structured_answer(settings, acme_fetcher):
     client = FakeAnthropicClient(
         [text_message(json.dumps(VALID_ANSWER), input_tokens=1200, output_tokens=300)]
     )
-    outcome = await _run(client, settings, acme_fetcher)
+    outcome, usage = await _run(client, settings, acme_fetcher)
     assert outcome.status == "ok"
     assert outcome.assessment.fit == "fit"
-    assert outcome.usage.llm_calls == 1
-    assert (outcome.usage.input_tokens, outcome.usage.output_tokens) == (1200, 300)
+    assert (usage.llm_requests, usage.llm_calls) == (1, 1)
+    assert (usage.input_tokens, usage.output_tokens) == (1200, 300)
 
 
 @pytest.mark.anyio
@@ -66,7 +74,6 @@ async def test_request_uses_structured_output_and_marks_page_text(settings, acme
         "type": "json_schema",
         "schema": ASSESSMENT_SCHEMA,
     }
-    assert "tools" not in request  # stage 2: no tool calling yet
     content = request["messages"][0]["content"]
     assert "<screening_criteria>" in content
     assert '<page url="https://acme-valves.example/">' in content
@@ -81,7 +88,7 @@ async def test_reads_text_blocks_and_skips_thinking_blocks(settings, acme_fetche
             {"type": "text", "text": json.dumps(VALID_ANSWER)},
         ]
     )
-    outcome = await _run(FakeAnthropicClient([reply]), settings, acme_fetcher)
+    outcome, _ = await _run(FakeAnthropicClient([reply]), settings, acme_fetcher)
     assert outcome.status == "ok"
 
 
@@ -90,44 +97,51 @@ async def test_reads_text_blocks_and_skips_thinking_blocks(settings, acme_fetche
     "bad_text",
     [
         "not json at all",
+        "   ",  # an empty answer
         json.dumps({**VALID_ANSWER, "fit": "maybe"}),  # not an allowed label
         json.dumps({k: v for k, v in VALID_ANSWER.items() if k != "evidence"}),  # missing field
         json.dumps({**VALID_ANSWER, "rationale": "x" * 2001}),  # too long: API can't enforce it
     ],
 )
 async def test_answers_that_fail_schema_validation(bad_text, settings, acme_fetcher):
-    outcome = await _run(FakeAnthropicClient([text_message(bad_text)]), settings, acme_fetcher)
+    outcome, usage = await _run(
+        FakeAnthropicClient([text_message(bad_text)]), settings, acme_fetcher
+    )
     assert outcome.status == "invalid_output"
     assert outcome.assessment is None
-    assert outcome.usage.llm_calls == 1  # the tokens were still spent and are counted
+    assert usage.llm_calls == 1  # the tokens were still spent and are counted
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("stop_reason", "status"), [("refusal", "refused"), ("max_tokens", "invalid_output")]
+    ("stop_reason", "status"),
+    [("refusal", "refused"), ("max_tokens", "invalid_output"), ("pause_turn", "invalid_output")],
 )
-async def test_stop_reasons(stop_reason, status, settings, acme_fetcher):
+async def test_stop_reasons_are_handled_explicitly(stop_reason, status, settings, acme_fetcher):
     reply = text_message("{", stop_reason=stop_reason)
-    outcome = await _run(FakeAnthropicClient([reply]), settings, acme_fetcher)
+    outcome, _ = await _run(FakeAnthropicClient([reply]), settings, acme_fetcher)
     assert outcome.status == status
 
 
 @pytest.mark.anyio
-async def test_api_errors_become_llm_errors(settings, acme_fetcher):
+async def test_api_errors_become_llm_errors(acme_fetcher):
+    settings = make_settings(llm_max_retries=0)
     request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
     client = FakeAnthropicClient([anthropic.APIConnectionError(request=request)])
-    outcome = await _run(client, settings, acme_fetcher)
+    outcome, usage = await _run(client, settings, acme_fetcher)
     assert outcome.status == "llm_error"
     assert outcome.error == "could not connect to the API"
+    assert (usage.llm_requests, usage.failed_requests, usage.llm_calls) == (1, 1, 0)
 
 
-def test_describe_api_error_never_leaks_request_details():
-    request = httpx2.Request(
-        "POST", "https://api.anthropic.com/v1/messages", headers={"x-api-key": "secret"}
-    )
-    message = describe_api_error(anthropic.APITimeoutError(request=request))
-    assert message == "the API request timed out"
-    assert "secret" not in message
+@pytest.mark.anyio
+async def test_budget_stops_the_call_before_anything_is_sent(acme_fetcher):
+    settings = make_settings(max_tokens_per_company=5_000)  # smaller than one request
+    client = FakeAnthropicClient([])
+    outcome, usage = await _run(client, settings, acme_fetcher)
+    assert outcome.status == "budget_exceeded"
+    assert client.requests == []
+    assert usage.llm_requests == 0
 
 
 def _walk(node):

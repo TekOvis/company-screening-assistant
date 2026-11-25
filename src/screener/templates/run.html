@@ -17,6 +17,10 @@
       <strong>Failed:</strong> {{ run.error }}
     {% endif %}
   </p>
+  {% if run.stop_reason %}
+  <p class="error-text" role="alert">Stopped early: {{ run.stop_reason }}.
+    Companies not yet processed were skipped.</p>
+  {% endif %}
   <dl class="criteria">
     <dt>Industry</dt><dd>{{ run.criteria.industry }}</dd>
     <dt>Geography</dt><dd>{{ run.criteria.geography }}</dd>
@@ -26,7 +30,7 @@
   <p class="exports">
     Export: <a href="/runs/{{ run.run_id }}/export.json">JSON</a> ·
     <a href="/runs/{{ run.run_id }}/export.csv">CSV</a>
-    <span class="hint">· {{ usage.llm_calls }} LLM calls,
+    <span class="hint">· {{ usage.llm_requests }} API requests ({{ usage.failed_requests }} failed),
       {{ usage.input_tokens }} input / {{ usage.output_tokens }} output tokens
       {% if backend == "mock" %}(mock estimates, nothing billed){% endif %}</span>
   </p>
@@ -88,7 +92,7 @@
       <td class="notes">
         {% if r.error %}<div class="error-text">{{ r.error }}</div>{% endif %}
         {% for w in r.warnings %}<div class="warning-text">{{ w }}</div>{% endfor %}
-        <div class="hint">{{ r.usage.llm_calls }} LLM / {{ r.tool_calls }} tool calls ·
+        <div class="hint">{{ r.usage.llm_requests }} API requests / {{ r.tool_calls }} tool calls ·
           {{ "%.1f"|format(r.duration_s) }} s</div>
       </td>
     </tr>

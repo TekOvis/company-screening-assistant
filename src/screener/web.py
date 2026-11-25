@@ -23,10 +23,11 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 
 from . import __version__
-from .agent import create_client, model_label
+from .budget import RunBudget
 from .config import Settings, get_settings
 from .export import run_to_csv, run_to_json
 from .fetcher import HttpFetcher, PageFetcher
+from .llm import create_client, model_label
 from .netguard import UnsafeURLError
 from .pipeline import screen_companies
 from .schemas import ScreeningCriteria, ScreeningRequest, ScreeningRun, utc_now
@@ -122,6 +123,7 @@ def create_app(
         return list(dict.fromkeys(normalized)), errors
 
     async def execute_run(run: ScreeningRun, fetcher: PageFetcher) -> None:
+        run_budget = RunBudget.from_settings(settings)
         try:
             await screen_companies(
                 run.urls,
@@ -130,8 +132,10 @@ def create_app(
                 client=llm_client,
                 fetcher=fetcher,
                 on_result=run.results.append,
+                run_budget=run_budget,
             )
             run.results.sort(key=lambda result: result.position)
+            run.stop_reason = run_budget.stop_reason
             run.status = "done"
         except asyncio.CancelledError:
             run.status, run.error = "failed", "cancelled because the server is shutting down"
@@ -243,9 +247,16 @@ def create_app(
                 criteria=payload.criteria,
                 urls=url_list,
             )
+            run_budget = RunBudget.from_settings(settings)
             run.results = await screen_companies(
-                url_list, payload.criteria, settings=settings, client=llm_client, fetcher=fetcher
+                url_list,
+                payload.criteria,
+                settings=settings,
+                client=llm_client,
+                fetcher=fetcher,
+                run_budget=run_budget,
             )
+            run.stop_reason = run_budget.stop_reason
             run.status, run.finished_at = "done", utc_now()
             runs.add(run)
             return run

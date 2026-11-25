@@ -1,7 +1,8 @@
 """Screening pipeline: fetch the homepage -> ask the LLM -> build a result row.
 
-Each company is processed independently; one failure never stops the others. A
-semaphore limits how many companies are processed at the same time.
+Each company is processed independently; one failure never stops the others — except a
+reached API spend limit, which stops the whole run (see budget.RunBudget). A semaphore
+limits how many companies are processed at the same time.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .agent import assess_company
+from .budget import CompanyBudget, RunBudget
 from .config import Settings
 from .fetcher import FetchError, PageFetcher
 from .netguard import UnsafeURLError
@@ -29,6 +31,7 @@ async def screen_company(
     settings: Settings,
     client: Any,
     fetcher: PageFetcher,
+    run_budget: RunBudget,
 ) -> CompanyResult:
     started = time.perf_counter()
     result = CompanyResult(position=position, input_url=raw_url, status="ok")
@@ -39,6 +42,8 @@ async def screen_company(
         result.duration_s = round(time.perf_counter() - started, 3)
         return result
 
+    if run_budget.stop_reason:
+        return finish("budget_exceeded", f"not processed: {run_budget.stop_reason}")
     try:
         url = fetcher.normalize(raw_url)
         homepage = await fetcher.fetch(url)
@@ -47,15 +52,17 @@ async def screen_company(
     except FetchError as exc:
         return finish("fetch_error", f"could not fetch the page ({exc.kind}): {exc.message}")
 
+    budget = CompanyBudget.from_settings(run_budget, settings)
     try:
-        outcome = await assess_company(client, settings, criteria, homepage, fetcher)
+        outcome = await assess_company(
+            client, settings, criteria, homepage, fetcher, budget=budget, usage=result.usage
+        )
     except Exception:  # last-resort guard: one company must not break the whole run
         logger.exception("unexpected error while assessing %s", raw_url)
         return finish("internal_error", "internal error while assessing this company")
 
     result.pages_fetched = [page.url for page in outcome.pages]
     result.tool_calls = outcome.tool_calls
-    result.usage = outcome.usage
     result.warnings = outcome.warnings
     assessment = outcome.assessment
     if assessment is not None:
@@ -81,14 +88,22 @@ async def screen_companies(
     client: Any,
     fetcher: PageFetcher,
     on_result: Callable[[CompanyResult], None] | None = None,
+    run_budget: RunBudget | None = None,
 ) -> list[CompanyResult]:
     """Screen all URLs concurrently (bounded); results are returned in input order."""
+    budget = run_budget or RunBudget.from_settings(settings)
     semaphore = asyncio.Semaphore(settings.concurrency)
 
     async def run_one(position: int, url: str) -> CompanyResult:
         async with semaphore:
             result = await screen_company(
-                position, url, criteria, settings=settings, client=client, fetcher=fetcher
+                position,
+                url,
+                criteria,
+                settings=settings,
+                client=client,
+                fetcher=fetcher,
+                run_budget=budget,
             )
         if on_result is not None:
             on_result(result)

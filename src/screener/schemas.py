@@ -120,9 +120,11 @@ ResultStatus = Literal[
 
 
 class Usage(BaseModel):
-    """Token usage summed over all LLM calls (only what the API actually reported)."""
+    """API usage for one company (or a whole run)."""
 
-    llm_calls: int = 0
+    llm_requests: int = 0  # every attempt, including retries and failed ones
+    failed_requests: int = 0  # attempts that ended in an error (no usage is reported)
+    llm_calls: int = 0  # successful responses; their usage is counted below
     input_tokens: int = 0
     output_tokens: int = 0
     cache_creation_input_tokens: int = 0
@@ -138,11 +140,8 @@ class Usage(BaseModel):
         )
 
     def add(self, other: Usage) -> None:
-        self.llm_calls += other.llm_calls
-        self.input_tokens += other.input_tokens
-        self.output_tokens += other.output_tokens
-        self.cache_creation_input_tokens += other.cache_creation_input_tokens
-        self.cache_read_input_tokens += other.cache_read_input_tokens
+        for name in type(self).model_fields:
+            setattr(self, name, getattr(self, name) + getattr(other, name))
 
 
 class CompanyResult(BaseModel):
@@ -185,6 +184,7 @@ class ScreeningRun(BaseModel):
     urls: list[str]
     results: list[CompanyResult] = Field(default_factory=list)
     error: str | None = None
+    stop_reason: str | None = None  # e.g. the API spend limit was reached
     disclaimer: str = DISCLAIMER
 
     @computed_field  # included in JSON exports
