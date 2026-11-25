@@ -19,6 +19,11 @@ dependencies = [
     "uvicorn>=0.32",
 ]
 
+[project.optional-dependencies]
+claude-code = [
+    "claude-agent-sdk>=0.2.188,<0.3",
+]
+
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.8"]
 

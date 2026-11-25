@@ -17,6 +17,7 @@ from typing import Any
 
 from .agent import run_agent
 from .budget import BudgetExceeded, CompanyBudget, RunBudget
+from .claude_code import ClaudeCodeClient  # importable without the optional extra
 from .config import Settings
 from .fetcher import FetchError, PageFetcher
 from .netguard import UnsafeURLError
@@ -57,9 +58,14 @@ async def screen_company(
 
     budget = CompanyBudget.from_settings(run_budget, settings)
     try:
-        outcome = await run_agent(
-            client, settings, criteria, homepage, fetcher, budget=budget, usage=result.usage
-        )
+        if isinstance(client, ClaudeCodeClient):  # the agent loop runs inside Claude Code
+            outcome = await client.run_agent(
+                criteria, homepage, fetcher, budget=budget, usage=result.usage
+            )
+        else:  # mock or API: our own loop over messages.create
+            outcome = await run_agent(
+                client, settings, criteria, homepage, fetcher, budget=budget, usage=result.usage
+            )
         result.pages_fetched = list(outcome.pages)
         result.tool_calls = outcome.tool_calls
         if outcome.assessment is None:

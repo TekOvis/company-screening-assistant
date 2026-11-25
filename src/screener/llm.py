@@ -1,9 +1,12 @@
-"""Talking to the Claude API: creating the client and making one call.
+"""Talking to the model: creating the client for the chosen backend and making one call.
+
+Backends: "mock" (FakeAnthropicClient), "anthropic" (the API, pay per token) and
+"claude_code" (Claude Code with the user's subscription login, see claude_code.py).
 
 Why our own retry loop instead of the SDK's? With SDK retries the extra attempts are
 invisible to the app. Here every attempt is counted against the request and token budgets,
-waiting between attempts is bounded, and a reached spend limit is never retried — it stops
-the whole run instead.
+waiting between attempts is bounded, and a reached spend or usage limit is never retried —
+it stops the whole run instead, and nothing switches to another backend.
 """
 
 from __future__ import annotations
@@ -48,10 +51,31 @@ class LLMCallError(Exception):
         self.spend_limit = spend_limit
 
 
+class BackendError(Exception):
+    """A non-HTTP backend (Claude Code) failed.
+
+    ``kind`` is one of: "quota" (subscription usage limit), "auth" (not logged in),
+    "setup" (missing CLI or a variable that would switch billing), "timeout", "failed".
+    """
+
+    def __init__(self, kind: str, message: str) -> None:
+        super().__init__(message)
+        self.kind = kind
+        self.message = message
+
+    @property
+    def quota(self) -> bool:
+        return self.kind == "quota"
+
+
 def create_client(settings: Settings) -> Any:
-    """Return the real async Anthropic client, or the fake one in mock mode."""
+    """Return the client for the configured backend."""
     if settings.llm_backend == "mock":
         return FakeAnthropicClient()
+    if settings.llm_backend == "claude_code":
+        from .claude_code import ClaudeCodeClient  # optional dependency, imported lazily
+
+        return ClaudeCodeClient(settings)
     key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else ""
     if not key.strip():
         raise ConfigurationError("LLM_BACKEND=anthropic requires the ANTHROPIC_API_KEY variable")
@@ -62,7 +86,11 @@ def create_client(settings: Settings) -> Any:
 
 
 def model_label(settings: Settings) -> str:
-    return "mock-heuristic (no LLM)" if settings.llm_backend == "mock" else settings.llm_model
+    if settings.llm_backend == "mock":
+        return "mock-heuristic (no LLM)"
+    if settings.llm_backend == "claude_code":
+        return f"{settings.llm_model} via Claude Code (subscription)"
+    return f"{settings.llm_model} via Anthropic API"
 
 
 async def call_llm(
@@ -93,6 +121,15 @@ async def call_llm(
                 await sleep(retry_delay(exc, attempt))
                 continue
             raise LLMCallError(describe_api_error(exc)) from exc
+        except BackendError as exc:
+            budget.settle(reserved, 0)
+            usage.failed_requests += 1
+            if exc.quota:  # the subscription limit: stop the run, never switch to the API
+                budget.run.stop(exc.message)
+                raise LLMCallError(exc.message, spend_limit=True) from exc
+            # No automatic retries through the subscription: Claude Code retries API
+            # errors itself, and a repeat would only spend more of the user's quota.
+            raise LLMCallError(exc.message) from exc
         call_usage = usage_from_response(response)
         budget.settle(reserved, call_usage.total_tokens)
         usage.add(call_usage)

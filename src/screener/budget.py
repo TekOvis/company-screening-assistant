@@ -90,6 +90,12 @@ class CompanyBudget:
         self.used_tokens += actual
         self.run.used_tokens += actual
 
+    def add_requests(self, count: int) -> None:
+        """Count model requests made inside one call (a Claude Code run takes several
+        turns; they are known only afterwards and are bounded by its max_turns)."""
+        self.requests += count
+        self.run.requests += count
+
 
 def estimate_request_tokens(params: dict[str, Any]) -> int:
     """Pessimistic size of one request: everything we send, plus the output limit."""

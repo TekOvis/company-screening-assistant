@@ -1,13 +1,17 @@
 """Evaluation runner on the synthetic set (pages always come from saved files).
 
     uv run python -m screener.evaluate --mode mock
-    uv run python -m screener.evaluate --mode live --only 01-valves-fit-homepage --yes
-    uv run python -m screener.evaluate --mode live --yes
+    uv run python -m screener.evaluate --mode claude-code --only 01-valves-fit-homepage --yes
+    uv run python -m screener.evaluate --mode api --only 01-valves-fit-homepage --yes
 
-mock  The whole application with the deterministic stand-in client. It shows that the
-      pipeline works; it says nothing about the quality of a model.
-live  The real model (LLM_MODEL), still on the saved synthetic pages, never the internet.
-      It does not start without --yes and first prints the hard spending cap.
+mock         The whole application with the deterministic stand-in client. It shows that
+             the pipeline works; it says nothing about the quality of a model.
+claude-code  The real model through the local Claude Code login (Claude subscription):
+             usage counts against the subscription limits, no per-token charge.
+api          The real model through the Anthropic API, billed per token.
+
+Both real-model modes ("live" runs) still use the saved synthetic pages, never the
+internet, print their limits first and do not start without --yes.
 
 Results go to eval/runs/<timestamp>-<mode>/ (git-ignored): report.md, report.json and
 results.jsonl with one line per case.
@@ -19,6 +23,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import os
 import statistics
 import time
 from collections import Counter
@@ -30,11 +35,12 @@ from typing import Any
 from . import __version__, metrics
 from .agent import ASSESSMENT_SCHEMA
 from .budget import RunBudget
+from .claude_code import check_auth_environment
 from .config import Settings
 from .eval_dataset import DEFAULT_CASES_DIR, EvalCase, dataset_sha256, load_cases
 from .fake_llm import FakeAnthropicClient
 from .fixtures import FixtureFetcher
-from .llm import create_client
+from .llm import BackendError, ConfigurationError, create_client, model_label
 from .pipeline import screen_company
 from .pricing import TARIFFS_SOURCE, cost_usd, tariff_for
 from .prompts import VERIFIER_PROMPT, system_prompt
@@ -48,10 +54,28 @@ MOCK_WARNING = (
     "MOCK MODE: answers come from keyword rules, not from an LLM. This run shows that the "
     "pipeline works; it says nothing about model quality."
 )
-LIVE_NOTE = (
-    "LIVE MODE on a small synthetic set of invented companies. The numbers describe this "
-    "set only; they are not evidence of accuracy on real company websites."
+_SET_NOTE = (
+    "The numbers describe this small synthetic set of invented companies only; they are not "
+    "evidence of accuracy on real company websites."
 )
+NOTICES = {
+    "mock": MOCK_WARNING,
+    "claude-code": "CLAUDE CODE MODE: the real model through your Claude Code login (Claude "
+    "subscription). Usage counts against your subscription limits; there is no per-token "
+    "charge. " + _SET_NOTE,
+    "api": "ANTHROPIC API MODE: the real model through the API, billed per token. " + _SET_NOTE,
+}
+MODE_BACKENDS = {"mock": "mock", "claude-code": "claude_code", "api": "anthropic"}
+MODE_TITLES = {
+    "mock": "mock mode (pipeline check, no model)",
+    "claude-code": "Claude Code (subscription)",
+    "api": "Anthropic API (pay per token)",
+}
+BILLING = {
+    "mock": "none (no model)",
+    "claude-code": "Claude subscription: usage limits, no per-token charge",
+    "api": "Anthropic API: billed per token",
+}
 LIMIT_SETTINGS = (
     "max_tool_calls",
     "max_llm_calls",
@@ -127,6 +151,34 @@ def _ratio(part: int, whole: int) -> float | None:
     return part / whole if whole else None
 
 
+def _cost_block(mode: str, usage: Usage, settings: Settings) -> dict[str, Any]:
+    """What a run cost, without ever presenting an estimate as a charge."""
+    if mode == "mock":
+        return {
+            "usd": 0.0,
+            "note": "mock mode: nothing is billed; token counts are rough estimates",
+        }
+    tariff = tariff_for(settings.llm_model)
+    estimate = round(cost_usd(usage, tariff), 4) if tariff else None
+    if mode == "claude-code":
+        return {
+            "usd": None,  # no per-token charge: usage counts against the subscription
+            "charged": "no per-token charge (Claude subscription usage limits apply)",
+            "api_equivalent_usd": estimate,
+            "source": TARIFFS_SOURCE,
+            "note": "what the reported tokens would cost on the API at the listed tariffs; "
+            "an estimate for comparison, not an actual charge",
+        }
+    if tariff is None:
+        return {"usd": None, "note": f"no tariff listed for {settings.llm_model}"}
+    return {
+        "usd": estimate,
+        "tariff_usd_per_million_tokens": asdict(tariff),
+        "source": TARIFFS_SOURCE,
+        "note": "successful responses only; failed requests report no usage",
+    }
+
+
 def build_report(
     outcomes: list[CaseOutcome],
     *,
@@ -159,20 +211,7 @@ def build_report(
 
     raw = [o for o in outcomes if o.result.raw_assessment is not None]
     durations = [o.result.duration_s for o in outcomes]
-    if mode == "mock":
-        cost: dict[str, Any] = {
-            "usd": 0.0,
-            "note": "mock mode: nothing is billed; token counts are rough estimates",
-        }
-    elif (tariff := tariff_for(settings.llm_model)) is not None:
-        cost = {
-            "usd": round(cost_usd(usage, tariff), 4),
-            "tariff_usd_per_million_tokens": asdict(tariff),
-            "source": TARIFFS_SOURCE,
-            "note": "successful responses only; failed requests report no usage",
-        }
-    else:
-        cost = {"usd": None, "note": f"no tariff listed for {settings.llm_model}"}
+    cost = _cost_block(mode, usage, settings)
 
     try:
         dataset_path = str(cases_dir.resolve().relative_to(PROJECT_ROOT)).replace("\\", "/")
@@ -180,11 +219,13 @@ def build_report(
         dataset_path = cases_dir.name
     return {
         "mode": mode,
-        "notice": MOCK_WARNING if mode == "mock" else LIVE_NOTE,
+        "backend": settings.llm_backend,
+        "billing": BILLING[mode],
+        "notice": NOTICES[mode],
         "app_version": __version__,
         "started_at": started.isoformat(timespec="seconds"),
         "wall_time_s": round(wall_time_s, 2),
-        "model": "mock-heuristic (no LLM)" if mode == "mock" else settings.llm_model,
+        "model": model_label(settings),
         "effort": None if mode == "mock" else settings.llm_effort,
         "limits": {name: getattr(settings, name) for name in LIMIT_SETTINGS},
         "dataset": {
@@ -267,10 +308,11 @@ def render_markdown(report: dict[str, Any], outcomes: list[CaseOutcome]) -> str:
     usage = report["usage"]
     facts = report["facts"]
     lines = [
-        f"# Evaluation report: {report['mode']} mode",
+        f"# Evaluation report: {MODE_TITLES[report['mode']]}",
         "",
         f"> {report['notice']}",
         "",
+        f"- Billing: {report['billing']}",
         f"- Started {report['started_at']}, wall time {report['wall_time_s']} s, "
         f"app version {report['app_version']}",
         f"- Model: {report['model']}"
@@ -344,10 +386,17 @@ def render_markdown(report: dict[str, Any], outcomes: list[CaseOutcome]) -> str:
         f"{usage['cache_read_input_tokens']:,} cache read",
     ]
     cost = report["cost"]
-    if cost.get("usd") is None:
+    source = f" Tariffs: {cost['source']}." if "source" in cost else ""
+    if "charged" in cost:  # Claude Code: never present the estimate as a charge
+        estimate = cost.get("api_equivalent_usd")
+        equivalent = f"${estimate:.4f}" if estimate is not None else "not computed"
+        lines.append(
+            f"- Cost: {cost['charged']}. API-equivalent estimate: {equivalent} ({cost['note']})."
+            f"{source}"
+        )
+    elif cost.get("usd") is None:
         lines.append(f"- Cost: not computed ({cost['note']})")
     else:
-        source = f" Tariffs: {cost['source']}." if "source" in cost else ""
         lines.append(f"- Cost: ${cost['usd']:.4f} ({cost['note']}).{source}")
     lines += [
         "",
@@ -383,12 +432,28 @@ def write_outputs(out_dir: Path, report: dict[str, Any], outcomes: list[CaseOutc
             handle.write(json.dumps(line, ensure_ascii=False) + "\n")
 
 
+def print_claude_code_plan(cases: list[EvalCase], settings: Settings) -> None:
+    print(
+        f"Claude Code evaluation: {len(cases)} case(s), model {settings.llm_model}, effort "
+        f"{settings.llm_effort}, through your Claude subscription login."
+    )
+    print(
+        "No per-token API charge; every case uses part of your subscription's usage limits. "
+        f"Per case: at most {settings.claude_code_max_turns} Claude Code turns for the agent "
+        f"plus one evidence check, {settings.max_tool_calls} tool calls, "
+        f"{settings.claude_code_timeout_s:.0f} s per Claude Code run; "
+        f"{settings.claude_code_concurrency} Claude Code process(es) at a time."
+    )
+    print("If the subscription limit is reached, the run stops. Nothing switches to the API.")
+
+
 def print_spending_plan(cases: list[EvalCase], settings: Settings) -> None:
     n = len(cases)
     token_cap = min(n * settings.max_tokens_per_company, settings.max_tokens_per_run)
     request_cap = min(n * settings.max_llm_requests_per_company, settings.max_llm_requests_per_run)
     print(
-        f"Live evaluation: {n} case(s), model {settings.llm_model}, effort {settings.llm_effort}."
+        f"Anthropic API evaluation: {n} case(s), model {settings.llm_model}, effort "
+        f"{settings.llm_effort}, billed per token."
     )
     print(
         f"Hard caps for this run: {token_cap:,} tokens and {request_cap} API requests "
@@ -413,15 +478,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--mode",
-        choices=("mock", "live"),
+        choices=tuple(MODE_BACKENDS),
         required=True,
-        help="mock: free pipeline test; live: real model, costs money",
+        help="mock: free pipeline test; claude-code: real model via your Claude subscription; "
+        "api: real model via the Anthropic API (costs money)",
     )
     parser.add_argument("--only", nargs="+", metavar="CASE_ID", help="run only these cases")
     parser.add_argument("--limit", type=int, help="run only the first N cases")
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES_DIR, help=argparse.SUPPRESS)
     parser.add_argument("--out", type=Path, help="output folder (default: eval/runs/...)")
-    parser.add_argument("--yes", action="store_true", help="confirm a live run (costs money)")
+    parser.add_argument(
+        "--yes", action="store_true", help="confirm a real-model run (quota or money)"
+    )
     args = parser.parse_args(argv)
 
     cases = load_cases(args.cases)
@@ -437,24 +505,33 @@ def main(argv: list[str] | None = None) -> int:
         print("No cases selected.")
         return 1
 
-    base = Settings()
+    settings = Settings().model_copy(update={"llm_backend": MODE_BACKENDS[args.mode]})
     client: Any
     if args.mode == "mock":
-        settings = base.model_copy(update={"llm_backend": "mock"})
         client = FakeAnthropicClient()
-        print(MOCK_WARNING)
     else:
-        settings = base.model_copy(update={"llm_backend": "anthropic"})
-        key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else ""
-        if not key.strip():
-            print("Live mode needs ANTHROPIC_API_KEY (environment or .env). Nothing was sent.")
-            return 1
-        print_spending_plan(cases, settings)
+        if args.mode == "claude-code":
+            try:
+                check_auth_environment(os.environ)
+            except BackendError as exc:
+                print(f"{exc.message} Nothing was sent.")
+                return 1
+            print_claude_code_plan(cases, settings)
+        else:
+            key = settings.anthropic_api_key
+            if key is None or not key.get_secret_value().strip():
+                print("API mode needs ANTHROPIC_API_KEY (environment or .env). Nothing was sent.")
+                return 1
+            print_spending_plan(cases, settings)
         if not args.yes:
-            print("Nothing was sent. Re-run with --yes to start the live evaluation.")
+            print("Nothing was sent. Re-run with --yes to start.")
             return 2
-        client = create_client(settings)
-        print(LIVE_NOTE)
+        try:
+            client = create_client(settings)
+        except (BackendError, ConfigurationError) as exc:
+            print(f"{exc} Nothing was sent.")
+            return 1
+    print(NOTICES[args.mode])
 
     started = utc_now()
     timer = time.perf_counter()

@@ -15,8 +15,12 @@
       <span class="mode mode-mock" title="Answers come from keyword rules, not from an LLM">
         Mock mode: keyword rules, no LLM
       </span>
+    {% elif backend == "claude_code" %}
+      <span class="mode mode-live" title="Runs on the local Claude Code login: personal use only">
+        {{ model }}
+      </span>
     {% else %}
-      <span class="mode mode-live">LLM: {{ model }}</span>
+      <span class="mode mode-live">{{ model }}</span>
     {% endif %}
   </header>
   <main>

@@ -18,8 +18,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # --- LLM -------------------------------------------------------------------------
-    # "mock" (default) never calls a paid API; "anthropic" uses the real Claude API.
-    llm_backend: Literal["mock", "anthropic"] = "mock"
+    # "mock" (default): keyword rules, no model, free.
+    # "claude_code": the real model through the local Claude Code login (subscription);
+    #                for personal local use only, not for a public demo.
+    # "anthropic": the real model through the Claude API with an API key (pay per token).
+    llm_backend: Literal["mock", "claude_code", "anthropic"] = "mock"
     anthropic_api_key: SecretStr | None = None
     # One model for the agent and the evidence verifier (simpler to reproduce and cost).
     llm_model: str = "claude-sonnet-5-5"
@@ -35,6 +38,13 @@ class Settings(BaseSettings):
     max_tool_calls: int = Field(default=3, ge=0, le=10)
     max_llm_calls: int = Field(default=4, ge=1, le=10)  # agent turns
     max_claims_to_verify: int = Field(default=25, ge=1, le=60)  # in one verifier request
+
+    # --- claude_code backend (Claude Code CLI via the Agent SDK) ---------------------
+    claude_code_cli_path: str | None = None  # default: the CLI bundled with the SDK
+    # Agent turns inside Claude Code; the structured answer itself takes a turn.
+    claude_code_max_turns: int = Field(default=6, ge=2, le=20)
+    claude_code_timeout_s: float = Field(default=300.0, gt=0)  # one Claude Code run
+    claude_code_concurrency: int = Field(default=1, ge=1, le=4)  # Claude Code processes at once
 
     # --- Budgets: every API attempt counts (agent turns, verifier, retries) -----------
     max_llm_requests_per_company: int = Field(default=8, ge=2, le=40)
