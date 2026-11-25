@@ -3,17 +3,17 @@
 **Status (2026-11-25, 23:10 UTC):** the mock demo is live at
 <https://screener.rustwatchtower.net>, release `0ccb86db0782`, with an external health
 check every minute. Pages are parsed in a child process that a time limit can stop. An
-access token is required. See [Activation record](#activation-record-2026-11-25),
+access token is required; access is provided on request. See [Activation record](#activation-record-2026-11-25),
 [Update: health check](#update-health-check-2026-11-25-2112-utc) and
 [Update: parser in a child process](#update-parser-in-a-child-process-2026-11-25-2305-utc).
-- It runs as a **mock-mode** service on a small VPS shared with another service, without
+- It runs as a **mock-mode** service on a small VPS shared with another running application, without
   Docker. See [Shared VPS without Docker](#shared-vps-without-docker-planned-first-demo).
 - The Dockerfile route below is kept for other hosts. The image has not been built yet,
   because Docker is not available on the development machine.
 
 ## Shared VPS without Docker (planned first demo)
 
-The demo will run on a VPS that already serves another application (Rust Watchtower),
+The demo will run on a VPS that already runs another application,
 managed by systemd behind Caddy.
 - **Machine:** 1 vCPU, 2 GB RAM, Ubuntu 24.04, Python 3.12.
 - **Why without Docker:** the existing service is set up the same way, and one consistent
@@ -168,7 +168,7 @@ run in the service's cgroup. The largest job peaked at 149 MB for the whole cgro
 - The job was the largest the server settings allow: 10 sites × 4 pages of 1 MB, two
   companies in parallel.
 - The service itself was not started, and Caddy was not changed.
-- Every 2 seconds the other service was probed: its local API on loopback and its public
+- Every 2 seconds the other application was probed: its API on loopback and its public
   HTTPS page (from the server itself).
 
 **The job.**
@@ -176,7 +176,7 @@ run in the service's cgroup. The largest job peaked at 149 MB for the whole cgro
 - Peak memory 129 MB (the process's own maximum RSS); 92 MB before the job.
 - CPU time 65 s; wall time 130 s. That ratio matches `CPUQuota=50%`.
 
-**The other service's response times** (seconds; 14, 63 and 10 samples):
+**The other application's response times** (seconds; 14, 63 and 10 samples):
 
 | Phase | Local API: median / p95 / max | Public HTTPS: median / p95 / max | Load average (1 min), max |
 |---|---|---|---|
@@ -184,7 +184,7 @@ run in the service's cgroup. The largest job peaked at 149 MB for the whole cgro
 | During the job (~2 min) | 0.007 / 0.023 / 0.041 | **0.168 / 0.212 / 0.248** | 1.14 |
 | After (20 s) | 0.006 / 0.011 / 0.011 | 0.096 / 0.150 / 0.150 | 1.11 |
 
-All responses were 200. The other service logged no warnings or errors in that window.
+All responses were 200. The other application logged no warnings or errors in that window.
 - Its application API was not slowed down.
 - **Full HTTPS requests were about 1.8 times slower** (median +77 ms) while the job ran.
   *Assumed cause, not confirmed by measurement:* TLS and proxy work in Caddy competing
@@ -248,7 +248,7 @@ If the slower HTTPS during a large job becomes a problem, there are three option
 - lower `FETCH_MAX_BYTES`: at 0.5 MB, local CPU time per job roughly halved;
 - allow fewer URLs per screening.
 
-These limits reduce the effect on the other service, but **do not exclude it**:
+These limits reduce the effect on the other application, but **do not exclude it**:
 - the disk, the network, the page cache, the kernel and the single CPU core stay shared;
 - even capped at 50%, a long job competes for the core and its caches.
 
@@ -307,7 +307,7 @@ sudo bash /tmp/deploy/install.sh /root/screener-<commit>.tar.gz <commit>
 1. **DNS.** Add an A record `screener.rustwatchtower.net → <server IP>` at the DNS
    provider. Check it on the authoritative name servers, not only on a public resolver.
 2. **Load check before the service is public.** Run the same measurement under the
-   service's limits, and watch the other service's response time meanwhile:
+   service's limits, and watch the other application's response time meanwhile:
 
    ```bash
    systemd-run --wait --pipe --uid=screener -p MemoryMax=300M -p CPUQuota=50% \
@@ -428,7 +428,7 @@ rm /root/screener-*.tar.gz
   was not found in:
   - the service or Caddy journals, `/var/log/caddy`, syslog, or the release directories;
   - the Git working tree or history, or the session's temporary files.
-- **The other service.** Its site and API answered 200 with normal response times, and
+- **The other application.** Its site and API answered 200 with normal response times, and
   all three services were active.
 
 **Memory of the running service**, after two small examples and one failed screening.
@@ -502,8 +502,8 @@ This was not a maximum job.
 - **Caddy rollback, dry run on the real Caddyfile.** `caddy-detach.sh --dry-run` would
   remove exactly the screener block (lines 31–47). The rest validated as the caddy user,
   the Caddyfile stayed unchanged, and no root-owned file appeared in `/var/log/caddy`.
-- **Neighbours.** Rust Watchtower's API and site, and the German trainer site, answered
-  200. All services were active.
+- **Neighbours.** The other applications on the server answered 200. All services were
+  active.
 - **Memory** after the restart and one example: `MemoryCurrent` 86.7 MB, `MemoryPeak`
   86.9 MB. This was not a large job.
 
@@ -548,10 +548,10 @@ comments; the packages are the same. Caddy was not touched.
   `/healthz` answered with the mock backend, and the process uses files from
   `0ccb86db0782` only. Without the token, `/` redirects to `/login`.
 - **Real public pages.** The examples run on saved pages and never reach the parser, so a
-  screening of two real sites was sent through `https://screener.rustwatchtower.net/api/screen`:
-  `https://rustwatchtower.net/` and `https://deutsch.rustwatchtower.net/`. Both are sites on
-  the same server. Both came back `ok` with their pages fetched, in 1.1 s, with no parser
-  warning in the journal.
+  screening of two real public sites was sent through
+  `https://screener.rustwatchtower.net/api/screen`. Both are other sites hosted on the same
+  server, so no third party's site was crawled. Both came back `ok` with their pages
+  fetched, in 1.1 s, with no parser warning in the journal.
 - **One cgroup.** Before the first page: only the app process. After it, three processes,
   all in `/system.slice/company-screener.service`, all user `screener`, and no other
   process of that user anywhere:
@@ -571,15 +571,15 @@ without serving them from a public site. So, as in the first load check,
 `scripts/measure_memory.py` ran in a transient unit with the same user, resource limits
 and hardening as the service, and `RuntimeMaxSec=600`. The job: 10 sites × 4 pages of
 1 MB, two companies in parallel. The live service kept running. The transient unit's
-cgroup was sampled every second, and every 2 seconds Rust Watchtower's local API and
-public HTTPS and the live screener's `/healthz` were probed. No stuck parser was tested
-on the server.
+cgroup was sampled every second. Every 2 seconds, the other application's API (on
+loopback) and public HTTPS page and the live screener's `/healthz` were probed. No stuck
+parser was tested on the server.
 
-Stop rules, fixed before the run: the check stops at once after 3 failed Rust Watchtower
-answers in a row. The release is rolled back on any OOM, 2 or more `/healthz` answers over
-5 s, 2 or more failed Rust Watchtower answers, or a Rust Watchtower HTTPS median above
-0.25 s during the job. That is 1.5 times the 0.168 s of the first load check, which was
-accepted. None of them was reached.
+Stop rules, fixed before the run: the check stops at once after 3 failed answers of the
+other application in a row. The release is rolled back on any OOM, 2 or more `/healthz`
+answers over 5 s, 2 or more failed answers of the other application, or its HTTPS median
+above 0.25 s during the job. That is 1.5 times the 0.168 s of the first load check, which
+was accepted. None of them was reached.
 
 - **Job:** 40 pages, all `ok`. CPU 62.1 s (app 10.7 s, parser 51.4 s); wall time 125.4 s,
   which matches `CPUQuota=50%`.
@@ -590,15 +590,15 @@ accepted. None of them was reached.
 - **`/healthz` of the app under load:** 125 checks, median 0.01 s, max 0.12 s, none over 1 s.
 - **The live screener's `/healthz` meanwhile:** median 0.007 s, max 0.024 s, all 200.
 
-| Rust Watchtower, seconds | Before (30 s) | During the job | After (20 s) |
+| Other application, seconds | Before (30 s) | During the job | After (20 s) |
 |---|---|---|---|
 | Local API: median / p95 / max | 0.005 / 0.006 / 0.006 | 0.006 / 0.024 / 0.027 | 0.006 / 0.009 / 0.009 |
 | Public HTTPS: median / p95 / max | 0.073 / 0.108 / 0.108 | **0.142 / 0.235 / 0.250** | 0.080 / 0.158 / 0.158 |
 | Load average (1 min), max | 0.10 | 0.83 | 0.50 |
 
-All Rust Watchtower answers were 200 and it logged no warnings. As in the first load
-check, its public HTTPS was about twice as slow during the job (median +69 ms), and its
-API was not slowed down. Afterwards: all services active, no app warnings, the health
+All of the other application's answers were 200 and it logged no warnings. As in the
+first load check, its public HTTPS was about twice as slow during the job (median +69 ms),
+and its API was not slowed down. Afterwards: all services active, no app warnings, the health
 check journal empty, `NRestarts` 0, no leftover transient unit.
 
 **Discrepancy, unexplained.** When the service was stopped, systemd reported `80.7M memory

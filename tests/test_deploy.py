@@ -137,8 +137,8 @@ def _detach(tmp_path: Path, caddyfile: str) -> subprocess.CompletedProcess[str]:
 
 
 OTHER_SITES = (
-    "rustwatchtower.net {\n\treverse_proxy 127.0.0.1:8765\n\theader {\n\t\t-Server\n\t}\n}\n\n"
-    "deutsch.rustwatchtower.net {\n\troot * /var/www/deutsch\n\tfile_server\n}\n"
+    "app.example.org {\n\treverse_proxy 127.0.0.1:9000\n\theader {\n\t\t-Server\n\t}\n}\n\n"
+    "static.example.org {\n\troot * /var/www/static\n\tfile_server\n}\n"
 )
 
 

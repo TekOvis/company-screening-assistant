@@ -263,15 +263,15 @@ mock backend, `PUBLIC_DEMO=true` (no start without a token), HTTPS-only cookie.
 - checks after deploying, and rollback.
 
 **First demo:** mock mode at `screener.rustwatchtower.net`, on a small VPS shared with
-another service. It runs without Docker: a systemd unit on loopback behind Caddy, with
+another running application. It runs without Docker: a systemd unit on loopback behind Caddy, with
 resource limits and an external health check every minute. The files are in
 [`deploy/`](deploy), and `install.sh` prepares everything without activating it.
 Measurements, the limits and what they do not guarantee, activation and rollback:
 [docs/deployment.md](docs/deployment.md).
 
 Current state (2026-11-25): the mock demo is live at
-<https://screener.rustwatchtower.net>, release `0ccb86db0782`. It needs an access token,
-and there is no LLM on the server. The Docker image has not been built, because Docker is
+<https://screener.rustwatchtower.net>, release `0ccb86db0782`. **It needs an access
+token, which is provided on request.** There is no LLM on the server. The Docker image has not been built, because Docker is
 not available on the development machine.
 
 **What the demo shows:** the interface and the pipeline (fetching, limits, the evidence
