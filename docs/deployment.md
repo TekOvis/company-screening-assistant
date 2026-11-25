@@ -519,7 +519,8 @@ target), their archives, all backups, the settings and Caddy. The unit backups i
 `20261125T192759Z` and `20261125T193045Z` still name the removed releases in
 `previous-current.txt`. They are history only.
 
-**Rolling back this update.**
+**Rolling back this update** (history: `9c3079ed1570` was removed after the
+[next update](#update-parser-in-a-child-process-2026-11-25-2305-utc)).
 - **Release:** back to `9c3079ed1570` with the symbolic link and a restart. Its
   `ExecStart` matches the current unit. That release parses HTML in the event loop, so
   the health check could restart the service during a large job. Disable the timer as
@@ -619,6 +620,13 @@ curl -fsS http://127.0.0.1:8001/healthz
 The settings file did not change; its copy is in the same backup. The health check can
 stay on: `7804bc4373aa` answers `/healthz` during large jobs. That release still has the
 stuck-page problem described above.
+
+**Removed afterwards (23:35 UTC): release `9c3079ed1570`.** Checked first: it was not
+`current`, no unit or the health check script named it, no symbolic link pointed at it,
+no process used its files, and no file in `/etc` named it. Then its directory (81 MB) and
+its install archive in `/root` were removed. Kept: `0ccb86db0782` (current),
+`7804bc4373aa` (the rollback target), their archives and all backups. The backup
+`20261125T211228Z` still names it in `previous-current.txt`; that is history only.
 
 ## Docker route (other hosts)
 

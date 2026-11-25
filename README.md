@@ -274,6 +274,11 @@ Current state (2026-11-25): the mock demo is live at
 and there is no LLM on the server. The Docker image has not been built, because Docker is
 not available on the development machine.
 
+**What the demo shows:** the interface and the pipeline (fetching, limits, the evidence
+check, exports) in mock mode, where keyword rules stand in for the model. It does not show
+the quality of a model. How the real model did is in the saved evaluation reports:
+[docs/evaluation.md](docs/evaluation.md) and [`eval/results/`](eval/results).
+
 ## Limitations
 
 - Plain HTTP only: pages that need JavaScript show little text. A browser-based fetcher
@@ -303,11 +308,14 @@ This project was built with an AI coding assistant, Claude Code by Anthropic.
   model; batch the evidence check and do not treat its verdicts as proof; keep tool
   calls on the same site after redirects; count every request, including retries,
   against the budgets; run the model locally through a Claude Code subscription, with no
-  automatic switch to the paid API.
+  automatic switch to the paid API. For the demo: mock mode only, the health check rules,
+  keeping the CPU and page-size limits, rolling back Caddy by removing only the demo's
+  block, and an isolated HTML parser that a time limit can stop.
 - **The assistant** wrote the code, tests, synthetic evaluation cases with their expected
-  answers, and this documentation, and ran the local checks: tests, linting, mock
-  evaluation and manual smoke tests against public websites. Commits carry a
-  `Co-Authored-By: Claude` trailer.
+  answers, the deployment scripts and this documentation. It ran the local checks: tests,
+  linting, mock evaluation and manual smoke tests against public websites. With the
+  author's approval for each step, it also installed the demo on the server and ran the
+  load and memory checks there. Commits carry a `Co-Authored-By: Claude` trailer.
 - **Not done yet:**
   - an independent code review;
   - a human review of the evaluation labels;
