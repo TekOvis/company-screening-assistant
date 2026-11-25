@@ -10,6 +10,11 @@
 Description=Company Screening Assistant (demo)
 After=network-online.target
 Wants=network-online.target
+# No endless restart loop: after 5 starts within 10 minutes (crashes, the health check,
+# manual restarts) systemd leaves the service failed until someone runs
+# `systemctl reset-failed company-screener` and starts it again.
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 Type=exec

@@ -1,0 +1,41 @@
+# Health check for the demo, started every minute by company-screener-health.timer.
+# Restarts company-screener only if it is running but does not answer; see
+# deploy/healthcheck.sh for the rules. Installed by deploy/install.sh, not enabled by it.
+#
+# Deliberately no Wants=/Requires= on company-screener: the check must never start a
+# demo that was stopped on purpose.
+
+[Unit]
+Description=Company Screening Assistant (demo): health check
+After=company-screener.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/company-screener/bin/healthcheck.sh
+StateDirectory=company-screener-health
+StateDirectoryMode=0700
+TimeoutStartSec=30
+# Failures, restarts, giving up and recovery reach the journal; routine start and finish
+# lines once a minute do not.
+LogLevelMax=notice
+
+# Runs as root because it restarts a system service. It needs loopback HTTP, systemctl
+# and its state directory; the rest is locked down.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+SystemCallArchitectures=native

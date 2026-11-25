@@ -1,6 +1,8 @@
 """The server files in deploy/ agree with each other and with the app's settings."""
 
 import re
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -62,6 +64,96 @@ def test_the_venv_is_never_moved_and_the_service_does_not_rely_on_its_scripts():
     assert ".partial" not in install and not re.search(r"^\s*mv .*RELEASE", install, re.M)
     assert 'python3 -m venv "$RELEASE/venv"' in install
     assert "ExecStart=/opt/company-screener/current/venv/bin/python -m uvicorn " in unit
+
+
+def test_restart_loops_are_bounded():
+    unit = _read("company-screener.service")
+    assert "StartLimitIntervalSec=600" in unit and "StartLimitBurst=5" in unit
+
+
+def test_health_check_follows_the_agreed_rules():
+    """Every minute, 5 s timeout, restart only after 3 failures in a row, at most 3
+    restarts per hour, and never start a demo that was stopped on purpose."""
+    script = _read("healthcheck.sh")
+    timer = _read("company-screener-health.timer")
+    unit = _read("company-screener-health.service")
+
+    assert "OnCalendar=minutely" in timer
+    assert "URL=${HEALTH_URL:-http://127.0.0.1:8001/healthz}" in script
+    for setting in (
+        "TIMEOUT_S=5",
+        "FAILURES_BEFORE_RESTART=3",
+        "MAX_RESTARTS=3",
+        "RESTART_WINDOW_S=3600",
+    ):
+        assert re.search(rf"^{setting}$", script, re.MULTILINE), setting
+    assert '--max-time "$TIMEOUT_S"' in script
+
+    # Looks at the service before checking it, and only ever uses try-restart.
+    assert script.index("systemctl is-active") < script.index("curl ")
+    assert "systemctl try-restart --no-block" in script
+    assert not re.search(r"systemctl\s+(?:--\S+\s+)*(start|restart|enable|reload)\b", script)
+    # The check unit must not pull the demo in.
+    assert not re.search(r"^(Wants|Requires|BindsTo|PartOf)=", unit, re.MULTILINE)
+    assert "Type=oneshot" in unit
+    assert "ExecStart=/opt/company-screener/bin/healthcheck.sh" in unit
+    assert "StateDirectory=company-screener-health" in unit
+
+
+def test_install_script_installs_the_health_check_outside_the_releases():
+    install = _read("install.sh")
+    assert "HEALTH_SCRIPT=$BASE/bin/healthcheck.sh" in install
+    assert 'deploy/healthcheck.sh" "$HEALTH_SCRIPT"' in install
+    for name in ("company-screener-health.service", "company-screener-health.timer"):
+        assert f'deploy/{name}"' in install
+    assert 'systemd-analyze verify "$UNIT" "$HEALTH_UNIT" "$HEALTH_TIMER"' in install
+
+
+def test_caddy_detach_removes_only_the_screener_block():
+    detach = _read("caddy-detach.sh")
+    assert "SITE=screener.rustwatchtower.net" in detach
+    assert "--dry-run" in detach
+    assert "runuser -u caddy -- caddy validate" in detach
+    assert detach.index("caddy validate") < detach.index("systemctl reload caddy")
+
+
+def _detach(tmp_path: Path, caddyfile: str) -> subprocess.CompletedProcess[str]:
+    """Run the block-removal step of caddy-detach.sh on a sample Caddyfile."""
+    code = _read("caddy-detach.sh").split("<<'EOF'\n", 1)[1].split("\nEOF\n", 1)[0]
+    (tmp_path / "Caddyfile").write_text(caddyfile, encoding="utf-8", newline="\n")
+    return subprocess.run(  # noqa: S603 - our own interpreter and code
+        [
+            sys.executable,
+            "-c",
+            code,
+            str(tmp_path / "Caddyfile"),
+            str(tmp_path / "new"),
+            "screener.rustwatchtower.net",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+OTHER_SITES = (
+    "rustwatchtower.net {\n\treverse_proxy 127.0.0.1:8765\n\theader {\n\t\t-Server\n\t}\n}\n\n"
+    "deutsch.rustwatchtower.net {\n\troot * /var/www/deutsch\n\tfile_server\n}\n"
+)
+
+
+def test_caddy_detach_keeps_every_other_site(tmp_path):
+    later_site = "\nlater.example {\n\trespond hi\n}\n"
+    for before, after in ((OTHER_SITES, ""), (OTHER_SITES, later_site)):
+        result = _detach(tmp_path, before + "\n" + _read("screener.caddy") + after)
+        assert result.returncode == 0, result.stderr
+        assert (tmp_path / "new").read_text(encoding="utf-8") == before + after
+
+
+def test_caddy_detach_changes_nothing_without_exactly_one_block(tmp_path):
+    result = _detach(tmp_path, OTHER_SITES)
+    assert result.returncode != 0 and "found 0" in result.stderr
+    assert not (tmp_path / "new").exists()
 
 
 def test_install_script_activates_nothing():

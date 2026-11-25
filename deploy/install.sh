@@ -7,10 +7,12 @@
 #   - creates the system user `screener` and /opt/company-screener/releases/<commit>;
 #   - builds a venv for that release from deploy/requirements.txt (pinned, hashed, wheels only);
 #   - creates /etc/company-screener/screener.env once (mode 600, random access token);
-#   - installs the systemd unit and checks it with systemd-analyze;
+#   - installs the systemd units (the app, its health check and timer) and the health
+#     check script, and checks the units with systemd-analyze;
 #   - points /opt/company-screener/current at the release;
 #   - checks the configuration and that the app imports.
-# It does NOT enable or start the service, touch DNS, or edit or reload Caddy.
+# It does NOT enable or start the service or the health check timer, touch DNS, or edit
+# or reload Caddy.
 set -euo pipefail
 
 BUNDLE=${1:?usage: install.sh BUNDLE.tar.gz COMMIT}
@@ -19,6 +21,10 @@ BASE=/opt/company-screener
 RELEASE="$BASE/releases/$COMMIT"
 ETC=/etc/company-screener
 UNIT=/etc/systemd/system/company-screener.service
+HEALTH_UNIT=/etc/systemd/system/company-screener-health.service
+HEALTH_TIMER=/etc/systemd/system/company-screener-health.timer
+# Outside the releases, so switching or removing a release never breaks the check.
+HEALTH_SCRIPT=$BASE/bin/healthcheck.sh
 PORT=8001
 
 [[ $EUID -eq 0 ]] || { echo "run as root" >&2; exit 1; }
@@ -62,10 +68,12 @@ else
     echo "kept existing $ETC/screener.env"
 fi
 
-echo "== backup of the previous unit and release pointer"
+echo "== backup of the previous units, health check script and release pointer"
 BACKUP="/var/backups/company-screener/$(date -u +%Y%m%dT%H%M%SZ)"
 install -d -m 700 "$BACKUP"
-if [[ -f $UNIT ]]; then cp -a "$UNIT" "$BACKUP/"; fi
+for f in "$UNIT" "$HEALTH_UNIT" "$HEALTH_TIMER" "$HEALTH_SCRIPT"; do
+    if [[ -f $f ]]; then cp -a "$f" "$BACKUP/"; fi
+done
 if [[ -L $BASE/current ]]; then readlink "$BASE/current" > "$BACKUP/previous-current.txt"; fi
 echo "backup: $BACKUP ($(ls "$BACKUP" | tr '\n' ' '))"
 
@@ -74,10 +82,14 @@ echo "== current release"
 ln -sfn "$RELEASE" "$BASE/current.new"
 mv -T "$BASE/current.new" "$BASE/current"
 
-echo "== systemd unit (installed, not enabled, not started)"
+echo "== systemd units and health check script (installed, not enabled, not started)"
 install -m 644 "$RELEASE/deploy/company-screener.service" "$UNIT"
+install -m 644 "$RELEASE/deploy/company-screener-health.service" "$HEALTH_UNIT"
+install -m 644 "$RELEASE/deploy/company-screener-health.timer" "$HEALTH_TIMER"
+install -D -m 755 -o root -g root "$RELEASE/deploy/healthcheck.sh" "$HEALTH_SCRIPT"
+bash -n "$HEALTH_SCRIPT"
 systemctl daemon-reload
-systemd-analyze verify "$UNIT"
+systemd-analyze verify "$UNIT" "$HEALTH_UNIT" "$HEALTH_TIMER"
 
 echo "== checks"
 # Settings are validated with the real env file (as root, which can read it); the app
@@ -109,4 +121,7 @@ print("import ok; examples:", len(load_examples()))
 runuser -u screener -- "$BASE/current/venv/bin/python" -m uvicorn --version
 echo "service enabled: $(systemctl is-enabled company-screener 2>/dev/null || true)"
 echo "service active:  $(systemctl is-active company-screener 2>/dev/null || true)"
-echo "Done. Nothing was activated: no DNS change, service not started, Caddy untouched."
+echo "health timer enabled: $(systemctl is-enabled company-screener-health.timer 2>/dev/null || true)"
+echo "health timer active:  $(systemctl is-active company-screener-health.timer 2>/dev/null || true)"
+echo "Done. Nothing was activated: no DNS change, service and timer not started, Caddy untouched."
+echo "A running service keeps the previous release until it is restarted."

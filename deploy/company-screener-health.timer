@@ -1,0 +1,13 @@
+# Runs the demo's health check every minute. Installed by deploy/install.sh, not enabled
+# by it. Enable: systemctl enable --now company-screener-health.timer
+
+[Unit]
+Description=Company Screening Assistant (demo): health check every minute
+
+[Timer]
+OnCalendar=minutely
+AccuracySec=1s
+Unit=company-screener-health.service
+
+[Install]
+WantedBy=timers.target
