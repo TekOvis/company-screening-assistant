@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     demo_access_token: SecretStr | None = None  # when set, every page needs it
     cookie_secure: bool = False  # set true behind HTTPS
     demo_examples: bool = False  # /examples: synthetic cases on saved pages (screener.examples)
+    # Wall-clock limit for one screening. On expiry, unfinished companies are skipped,
+    # finished results are kept and the run's slot is freed.
+    run_timeout_s: float = Field(default=300, ge=0.1, le=3600)
     runs_per_ip_per_hour: int = Field(default=10, ge=1, le=1000)
     login_attempts_per_ip_per_15_min: int = Field(default=10, ge=1, le=100)
     daily_max_companies: int = Field(default=200, ge=1)

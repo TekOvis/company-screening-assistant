@@ -34,7 +34,7 @@ from .fixtures import FixtureFetcher
 from .llm import create_client, model_label
 from .netguard import UnsafeURLError
 from .pipeline import screen_companies
-from .schemas import ScreeningCriteria, ScreeningRequest, ScreeningRun, utc_now
+from .schemas import CompanyResult, ScreeningCriteria, ScreeningRequest, ScreeningRun, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -227,17 +227,22 @@ def create_app(
     async def execute_run(run: ScreeningRun, fetcher: PageFetcher, token_cap: int) -> None:
         run_budget = RunBudget(max_tokens=token_cap, max_requests=settings.max_llm_requests_per_run)
         try:
-            await screen_companies(
-                run.urls,
-                run.criteria,
-                settings=settings,
-                client=llm_client,
-                fetcher=fetcher,
-                on_result=run.results.append,
-                run_budget=run_budget,
-            )
+            try:
+                async with asyncio.timeout(settings.run_timeout_s):
+                    await screen_companies(
+                        run.urls,
+                        run.criteria,
+                        settings=settings,
+                        client=llm_client,
+                        fetcher=fetcher,
+                        on_result=run.results.append,
+                        run_budget=run_budget,
+                    )
+                run.stop_reason = run_budget.stop_reason
+            except TimeoutError:
+                logger.warning("run %s hit the time limit", run.run_id)
+                run.stop_reason = time_limit_reason()
             run.results.sort(key=lambda result: result.position)
-            run.stop_reason = run_budget.stop_reason
             run.status = "done"
         except asyncio.CancelledError:
             run.status, run.error = "failed", "cancelled because the server is shutting down"
@@ -249,6 +254,9 @@ def create_app(
             run.finished_at = utc_now()
             daily.settle(token_cap, run_budget.used_tokens)
             await fetcher.aclose()
+
+    def time_limit_reason() -> str:
+        return f"the time limit of {settings.run_timeout_s:g} s per screening was reached"
 
     def new_run(criteria: ScreeningCriteria, urls: list[str]) -> ScreeningRun:
         return ScreeningRun(
@@ -465,15 +473,23 @@ def create_app(
             run_budget = RunBudget(
                 max_tokens=token_cap, max_requests=settings.max_llm_requests_per_run
             )
-            run.results = await screen_companies(
-                url_list,
-                payload.criteria,
-                settings=settings,
-                client=llm_client,
-                fetcher=fetcher,
-                run_budget=run_budget,
-            )
-            run.stop_reason = run_budget.stop_reason
+            collected: list[CompanyResult] = []
+            try:
+                async with asyncio.timeout(settings.run_timeout_s):
+                    await screen_companies(
+                        url_list,
+                        payload.criteria,
+                        settings=settings,
+                        client=llm_client,
+                        fetcher=fetcher,
+                        on_result=collected.append,
+                        run_budget=run_budget,
+                    )
+                run.stop_reason = run_budget.stop_reason
+            except TimeoutError:
+                logger.warning("API run %s hit the time limit", run.run_id)
+                run.stop_reason = time_limit_reason()
+            run.results = sorted(collected, key=lambda result: result.position)
             run.status = "done"
             return run
         finally:
