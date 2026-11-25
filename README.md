@@ -268,8 +268,9 @@ with resource limits. The files are in [`deploy/`](deploy), and `install.sh` pre
 everything without activating it. Measurements, the limits and what they do not
 guarantee, activation and rollback: [docs/deployment.md](docs/deployment.md).
 
-Not done yet: nothing is installed or deployed, and the Docker image has not been built
-(no Docker on the development machine).
+Current state: the release is installed on the server but not activated. The service is
+not running, there is no DNS record yet, and Caddy is unchanged. The Docker image has not
+been built, because Docker is not available on the development machine.
 
 ## Limitations
 

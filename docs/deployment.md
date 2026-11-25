@@ -1,6 +1,8 @@
 # Deploying the demo
 
-**Status (2026-11-25):** nothing is deployed.
+**Status (2026-11-25):** installed on the server but **not activated**.
+- Release `d9285ddfbf92`, installed with `install.sh`. The service is disabled and not
+  running; there is no DNS record yet, and Caddy is unchanged.
 - The planned first demo is a **mock-mode** service at `screener.rustwatchtower.net`, on a
   small VPS shared with another service, without Docker. See
   [Shared VPS without Docker](#shared-vps-without-docker-planned-first-demo).
