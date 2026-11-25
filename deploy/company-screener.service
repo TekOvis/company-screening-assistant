@@ -29,8 +29,10 @@ Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15
 
-# Resources (preliminary, see above). Local peak for the largest job: 122-153 MB.
-MemoryHigh=250M
+# Resources. Peak for the largest job on the server: 129 MB (load check, 2026-11-25).
+# No MemoryHigh on purpose: without swap, the server check showed a process above it
+# being throttled into a hang (263 MB, never reaching MemoryMax). With MemoryMax alone the
+# kernel kills only this service, and Restart=on-failure brings it back.
 MemoryMax=300M
 MemorySwapMax=0
 CPUQuota=50%

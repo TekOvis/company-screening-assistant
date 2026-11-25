@@ -51,6 +51,8 @@ def test_unit_has_resource_limits_and_runs_unprivileged():
         "EnvironmentFile=/etc/company-screener/screener.env",
     ):
         assert line in unit
+    # Without swap, MemoryHigh throttled a test process into a hang on the server.
+    assert not re.search(r"^MemoryHigh=", unit, re.MULTILINE)
 
 
 def test_install_script_activates_nothing():

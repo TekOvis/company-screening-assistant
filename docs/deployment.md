@@ -72,18 +72,67 @@ The process starts at about 95 MB (interpreter, imports, app). What the numbers 
   demo less responsive. Moving parsing to a worker thread is a possible later
   improvement.
 
-These are measurements on another OS and machine. They must be repeated on the server
-before activation (step 2 below).
+These are measurements on another OS and machine. The server check below repeats them.
+
+### Load check on the server (2026-11-25, 19:12–19:21 UTC)
+
+**Setup.**
+- The same script ran as user `screener` in a transient systemd unit, under the
+  service's limits, with the installed release `d9285ddfbf92`.
+- The job was the largest the server settings allow: 10 sites × 4 pages of 1 MB, two
+  companies in parallel.
+- The service itself was not started, and Caddy was not changed.
+- Every 2 seconds the other service was probed: its local API on loopback and its public
+  HTTPS page (from the server itself).
+
+**The job.**
+- All 40 pages processed, status `ok`.
+- Peak memory 129 MB (the process's own maximum RSS); 92 MB before the job.
+- CPU time 65 s; wall time 130 s. That ratio matches `CPUQuota=50%`.
+
+**The other service's response times** (seconds; 14, 63 and 10 samples):
+
+| Phase | Local API: median / p95 / max | Public HTTPS: median / p95 / max | Load average (1 min), max |
+|---|---|---|---|
+| Before (30 s) | 0.006 / 0.078 / 0.078 | 0.091 / 0.119 / 0.119 | 0.17 |
+| During the job (~2 min) | 0.007 / 0.023 / 0.041 | **0.168 / 0.212 / 0.248** | 1.14 |
+| After (20 s) | 0.006 / 0.011 / 0.011 | 0.096 / 0.150 / 0.150 | 1.11 |
+
+All responses were 200. The other service logged no warnings or errors in that window.
+- Its application API was not slowed down.
+- **Full HTTPS requests were about 1.8 times slower** (median +77 ms) while the job ran:
+  TLS work in Caddy competes for the single core.
+
+The limits reduced the effect, but did not remove it.
+
+**Memory limit checks** (same user and limits, each test process stopped by a time
+limit):
+- **Accounting.** A process holding 200 MB showed `memory.current` and `memory.peak` of
+  203 MB in its cgroup.
+- **`MemoryMax=300M` alone.** A process that tried to take 400 MB was killed by the
+  kernel (`oom-kill`, constrained to its own cgroup). Nothing else was affected.
+- **With `MemoryHigh=250M` as well, and no swap,** the same process was not killed. It was
+  throttled at 263 MB (43,432 `high` events) and hung until stopped by hand. For the
+  service, that would mean a hang that `Restart=on-failure` does not catch, so
+  **`MemoryHigh` was removed from the unit**.
+- **Unexplained:** at the end of the load check, systemd reported `Memory peak: 1.3M` for
+  the transient unit, while the process measured 129 MB. The direct cgroup reading above
+  works, so check `MemoryPeak` again while the service is running.
 
 ### Resource limits and what they do not guarantee
 
 The unit sets:
-- **Memory:** `MemoryHigh=250M`, `MemoryMax=300M`, `MemorySwapMax=0`;
+- **Memory:** `MemoryMax=300M`, `MemorySwapMax=0`, and no `MemoryHigh` (see above);
 - **CPU:** `CPUQuota=50%`, `CPUWeight=20`, `Nice=10`;
 - **Other:** `IOWeight=20`, `TasksMax=64`.
 
-300 MB is a **preliminary** limit, about twice the local peak. If the service exceeds it,
-the kernel stops this service only.
+300 MB is about 2.3 times the peak measured on the server for the largest job. If the
+service exceeds it, the kernel kills this service only, and systemd restarts it.
+
+If the slower HTTPS during a large job is not acceptable, there are three options:
+- lower `CPUQuota`, so jobs take longer but leave more of the core free;
+- lower `FETCH_MAX_BYTES`: at 0.5 MB, local CPU time per job roughly halved;
+- allow fewer URLs per screening.
 
 These limits reduce the effect on the other service, but **do not exclude it**:
 - the disk, the network, the page cache, the kernel and the single CPU core stay shared;
