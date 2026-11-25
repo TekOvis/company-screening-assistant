@@ -1,5 +1,6 @@
 """HttpFetcher tests. httpx.MockTransport stands in for the network: nothing leaves the
-machine, and each test controls DNS answers through a fake resolver."""
+machine, and each test controls DNS answers through a fake resolver. Retries use a fake
+sleep, so the tests never actually wait."""
 
 import socket
 
@@ -12,18 +13,24 @@ from screener.netguard import BlockedAddressError, UnsafeURLError
 from .conftest import ACME_HOME, make_settings
 
 PUBLIC_IP = "93.184.216.34"
+OTHER_PUBLIC_IP = "93.184.216.35"
 
 
-def _fetcher(handler, dns, **settings_overrides) -> HttpFetcher:
+def _fetcher(handler, dns, *, sleeps=None, **settings_overrides) -> HttpFetcher:
     async def resolver(host, port):
         if host not in dns:
             raise socket.gaierror("unknown host")
         return dns[host]
 
+    async def fake_sleep(seconds):
+        if sleeps is not None:
+            sleeps.append(seconds)
+
     return HttpFetcher(
         make_settings(**settings_overrides),
         resolver=resolver,
         transport=httpx.MockTransport(handler),
+        sleep=fake_sleep,
     )
 
 
@@ -103,6 +110,43 @@ async def test_follows_safe_redirects_and_reports_final_url():
 
 
 @pytest.mark.anyio
+async def test_same_site_rule_blocks_redirects_to_other_sites():
+    """A subpage requested by the model (/about) must not bounce to another site."""
+
+    def handler(request):
+        if request.headers["host"] == "acme.com":
+            return httpx.Response(302, headers={"location": "https://other-site.com/landing"})
+        return _html()
+
+    dns = {"acme.com": [PUBLIC_IP], "other-site.com": [OTHER_PUBLIC_IP]}
+    async with _fetcher(handler, dns) as fetcher:
+        with pytest.raises(FetchError) as info:
+            await fetcher.fetch("https://acme.com/about", same_site_as="acme.com")
+        assert info.value.kind == "offsite_redirect"
+        # Without the rule (the user's own homepage URL) the redirect is followed.
+        page = await fetcher.fetch("https://acme.com/about")
+        assert page.url == "https://other-site.com/landing"
+
+
+@pytest.mark.anyio
+async def test_same_site_rule_allows_www_variant_and_still_checks_addresses():
+    def handler(request):
+        if request.headers["host"] == "acme.com":
+            return httpx.Response(301, headers={"location": "https://www.acme.com/about"})
+        return _html()
+
+    dns = {"acme.com": [PUBLIC_IP], "www.acme.com": [PUBLIC_IP]}
+    async with _fetcher(handler, dns) as fetcher:
+        page = await fetcher.fetch("https://acme.com/about", same_site_as="acme.com")
+    assert page.url == "https://www.acme.com/about"
+
+    blocked_dns = {"acme.com": [PUBLIC_IP], "www.acme.com": ["10.0.0.9"]}
+    async with _fetcher(handler, blocked_dns) as fetcher:
+        with pytest.raises(BlockedAddressError):
+            await fetcher.fetch("https://acme.com/about", same_site_as="acme.com")
+
+
+@pytest.mark.anyio
 async def test_too_many_redirects():
     def handler(request):
         return httpx.Response(302, headers={"location": "/loop"})
@@ -143,21 +187,70 @@ async def test_rejects_non_html_content():
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("status", "retryable"), [(404, False), (403, False), (503, True), (429, True)]
+    ("status", "retryable", "attempts"),
+    [(404, False, 1), (403, False, 1), (503, True, 3), (429, True, 3)],
 )
-async def test_http_errors_are_classified(status, retryable):
+async def test_http_errors_are_classified_and_only_temporary_ones_retried(
+    status, retryable, attempts
+):
+    seen = []
+
     def handler(request):
+        seen.append(request)
         return _html("error", status=status)
 
-    async with _fetcher(handler, {"acme.com": [PUBLIC_IP]}) as fetcher:
+    async with _fetcher(handler, {"acme.com": [PUBLIC_IP]}, fetch_max_retries=2) as fetcher:
         with pytest.raises(FetchError) as info:
             await fetcher.fetch("https://acme.com/")
     assert info.value.kind == "http_status"
     assert info.value.retryable is retryable
+    assert len(seen) == attempts  # 1 try + 2 retries for temporary errors only
 
 
 @pytest.mark.anyio
-async def test_dns_failure_and_timeouts_are_reported():
+async def test_temporary_error_then_success():
+    responses = [_html("busy", status=503), _html()]
+    sleeps = []
+
+    async with _fetcher(
+        lambda request: responses.pop(0), {"acme.com": [PUBLIC_IP]}, sleeps=sleeps
+    ) as fetcher:
+        page = await fetcher.fetch("https://acme.com/")
+    assert "Acme Valves" in page.text
+    assert len(sleeps) == 1 and 0.5 <= sleeps[0] <= 0.75  # backoff with a little jitter
+
+
+@pytest.mark.anyio
+async def test_falls_back_to_the_next_checked_address():
+    def handler(request):
+        if request.url.host == PUBLIC_IP:
+            raise httpx.ConnectError("no route to host", request=request)
+        return _html()
+
+    async with _fetcher(handler, {"acme.com": [PUBLIC_IP, OTHER_PUBLIC_IP]}) as fetcher:
+        page = await fetcher.fetch("https://acme.com/")
+    assert "Acme Valves" in page.text
+
+
+class _BreakingStream(httpx.AsyncByteStream):
+    async def __aiter__(self):
+        yield b"<html><body>partial"
+        raise httpx.ReadTimeout("stalled")
+
+
+@pytest.mark.anyio
+async def test_timeout_while_reading_the_body_is_reported():
+    def handler(request):
+        return httpx.Response(200, headers={"content-type": "text/html"}, stream=_BreakingStream())
+
+    async with _fetcher(handler, {"acme.com": [PUBLIC_IP]}, fetch_max_retries=0) as fetcher:
+        with pytest.raises(FetchError) as info:
+            await fetcher.fetch("https://acme.com/")
+    assert info.value.kind == "timeout"
+
+
+@pytest.mark.anyio
+async def test_dns_failure_and_connection_timeouts_are_reported():
     def handler(request):
         raise httpx.ConnectTimeout("timed out", request=request)
 
@@ -166,5 +259,5 @@ async def test_dns_failure_and_timeouts_are_reported():
             await fetcher.fetch("https://unknown-host.com/")
         with pytest.raises(FetchError) as timeout_info:
             await fetcher.fetch("https://slow.com/")
-    assert dns_info.value.kind == "dns"
-    assert timeout_info.value.kind == "timeout" and timeout_info.value.retryable
+    assert dns_info.value.kind == "dns" and not dns_info.value.retryable
+    assert timeout_info.value.kind == "connect" and timeout_info.value.retryable

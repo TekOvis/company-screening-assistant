@@ -41,7 +41,8 @@ class Settings(BaseSettings):
     # --- Page fetching ---------------------------------------------------------------
     fetch_connect_timeout_s: float = Field(default=5.0, gt=0)
     fetch_read_timeout_s: float = Field(default=10.0, gt=0)
-    fetch_total_timeout_s: float = Field(default=20.0, gt=0)
+    fetch_total_timeout_s: float = Field(default=25.0, gt=0)  # one page, including retries
+    fetch_max_retries: int = Field(default=2, ge=0, le=5)
     fetch_max_bytes: int = Field(default=2_000_000, ge=10_000)
     fetch_max_redirects: int = Field(default=4, ge=0, le=10)
     page_text_max_chars: int = Field(default=15_000, ge=1_000)

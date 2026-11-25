@@ -157,7 +157,11 @@ class BlockedAddressError(UnsafeURLError):
 
 
 class ResolutionError(Exception):
-    """The host name could not be resolved."""
+    """The host name could not be resolved (a timeout is worth retrying, NXDOMAIN is not)."""
+
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.retryable = retryable
 
 
 async def resolve_public_addresses(
@@ -172,7 +176,7 @@ async def resolve_public_addresses(
         async with asyncio.timeout(timeout_s):
             addresses = await resolver(host, port)
     except TimeoutError as exc:
-        raise ResolutionError(f"DNS lookup for {host} timed out") from exc
+        raise ResolutionError(f"DNS lookup for {host} timed out", retryable=True) from exc
     except OSError as exc:  # socket.gaierror is a subclass of OSError
         raise ResolutionError(f"could not resolve {host}") from exc
     if not addresses:
