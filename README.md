@@ -172,6 +172,7 @@ All settings are environment variables; `.env.example` lists every one with its 
 | `MAX_ACTIVE_RUNS` / `MAX_STORED_RUNS` / `RUN_TTL_S` | 2 / 50 / 7200 | in-memory job limits |
 | `DEMO_ACCESS_TOKEN` / `PUBLIC_DEMO` | empty / `false` | access token for every page and the API; `PUBLIC_DEMO=true` makes it mandatory |
 | `RUNS_PER_IP_PER_HOUR` / `DAILY_MAX_COMPANIES` / `DAILY_MAX_TOKENS` | 10 / 200 / 2,000,000 | demo abuse and spending limits |
+| `DEMO_EXAMPLES` | `false` | ready-made synthetic examples at `/examples`, on saved pages |
 
 ## Evaluation
 
@@ -261,8 +262,14 @@ mock backend, `PUBLIC_DEMO=true` (no start without a token), HTTPS-only cookie.
 - the layers of spending protection;
 - checks after deploying, and rollback.
 
-Not done yet: the image has not been built (no Docker on the development machine), and
-nothing is deployed.
+**Planned first demo:** mock mode at `screener.rustwatchtower.net`, on a small VPS shared
+with another service. It runs without Docker: a systemd unit on loopback behind Caddy,
+with resource limits. The files are in [`deploy/`](deploy), and `install.sh` prepares
+everything without activating it. Measurements, the limits and what they do not
+guarantee, activation and rollback: [docs/deployment.md](docs/deployment.md).
+
+Not done yet: nothing is installed or deployed, and the Docker image has not been built
+(no Docker on the development machine).
 
 ## Limitations
 
