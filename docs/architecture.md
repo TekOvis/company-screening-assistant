@@ -118,6 +118,13 @@ of its own there"*, so a market statement cannot pass as a location. The verifie
 sees quotes, never whole pages. It is an LLM too and can be wrong: "supported" means "a
 second check agreed", not proof. A missing verdict counts as not supported.
 
+- **The description** is checked as a whole. Its quotes can be ones the model filed under
+  "description" or "business", never under the company name. The claim says that the
+  quotes must state every statement in it, and a partly stated description is removed
+  entirely, not shortened.
+- **Promotional wording** such as "leading" or "guaranteed" is not an established fact.
+  The verifier's instructions say so for every claim.
+
 **Rules.**
 
 - A fact stays only if its claim is supported.

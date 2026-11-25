@@ -222,8 +222,15 @@ def build_claims(assessment: Assessment, evidence: list[CheckedEvidence]) -> lis
         text = f"The company works in this industry: {a.industry}."
         claims.append(Claim("industry", a.industry, text, quotes_for("industry")))
     if a.description:
-        text = f"Description of the company: {a.description}"
-        claims.append(Claim("description", a.description, text, quotes_for("description")))
+        # Quotes filed under "business" may confirm the description too (decision of
+        # 2026-11-25), but only through the semantic check of the whole description:
+        # the category alone confirms nothing. Name quotes are never used here.
+        text = (
+            "The company is accurately described as follows, and the quotes state every "
+            f"statement in this description: {a.description}"
+        )
+        ids = _distinct_quotes(evidence, quotes_for("description") + quotes_for("business"))
+        claims.append(Claim("description", a.description, text, ids[:MAX_QUOTES_PER_CLAIM]))
     for kind in ("business", "exclusion"):
         ids = [i for i, e in enumerate(evidence) if e.supports == kind and e.check == "not_checked"]
         for i in ids[:MAX_STATEMENTS_PER_KIND]:
@@ -385,6 +392,18 @@ def _confirm(
         return status
     warnings.append(f"{label} criterion '{status}' set to unknown: its facts were not verified.")
     return "unknown"
+
+
+def _distinct_quotes(evidence: list[CheckedEvidence], ids: list[int]) -> list[int]:
+    """Evidence ids in order, skipping repeats of a quote already listed."""
+    seen: set[str] = set()
+    distinct = []
+    for i in ids:
+        key = normalize_for_match(evidence[i].quote)
+        if key not in seen:
+            seen.add(key)
+            distinct.append(i)
+    return distinct
 
 
 def _unique(values: list[str]) -> list[str]:

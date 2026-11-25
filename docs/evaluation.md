@@ -196,6 +196,23 @@ else, are the next step.
   measure the variance.
 - With a perfect score, the set no longer shows differences between settings.
 
-## Change log of expected answers
+## Change log
 
-No changes since the set was committed.
+### Expected answers
+
+No changes since the set was committed (`07cd40e`).
+
+### Pipeline, prompts and evaluation runner
+
+Any change made after seeing evaluation output is listed here. Results on this set after
+such a change are not independent of development.
+
+| Date | Commit | Change | Reason |
+|---|---|---|---|
+| 2026-11-25 | `2629233` | Mock only: location cue words match in any case | The mock missed "Headquartered" at the start of a sentence. Not a model change |
+| 2026-11-25 | `413998b` | Evaluation runner: the budget is the per-company caps times the number of cases | Run 1 shared the web app's per-run cap and stopped after 14 cases (see Results) |
+| 2026-11-25 | this change | Evidence check: the description may rest on quotes the model filed under "business", not only under "description". The claim text sent to the verifier now says that the quotes must state every statement in the description. The verifier prompt gained two rules: a partly stated description, or a quote that only names the company, does not support it; promotional or self-assessing wording is not an established fact. Name quotes are never used for the description | **Observed during development on case 01**, the first one-case Claude Code check: the model quoted the right sentence but filed it under business and name, so the description was removed. The project owner chose this option. It is not meant to fix the 5 descriptions removed in run 2: there the quotes stated only part of the description, and such descriptions are still rejected |
+
+The last change touches the verifier prompt, so the prompts fingerprint changes. Its effect
+on this set is **not measured yet**. It cannot be recomputed from the saved answers,
+because the verifier would have to judge description claims it never saw.
