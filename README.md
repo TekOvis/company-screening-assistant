@@ -11,9 +11,11 @@ from the fetched pages.
 
 1. You enter up to 10 URLs and the criteria, in a web form or through a JSON API.
 2. The app fetches each homepage over plain HTTP(S), with SSRF protection.
-3. Claude (one model, `claude-sonnet-5-5` by default) reads the page text. It may call one
-   tool, `fetch_company_page`, to read other pages of the **same** site, and must answer
-   with a JSON object that matches a schema (structured output).
+3. Claude (one model, `claude-sonnet-5-5` by default) reads the page text, either through
+   the Anthropic API or through a local Claude Code login (see
+   [Backends](#backends)). It may call one tool, `fetch_company_page`, to read other pages
+   of the **same** site, and must answer with a JSON object that matches a schema
+   (structured output).
 4. Every fact is checked. Code verifies that each quote is verbatim on a fetched page; a
    second, batched check confirms that the quote actually states the claim.
 5. Unsupported facts are removed, and the label — `fit`, `non_fit` or
@@ -48,16 +50,63 @@ The default is **mock mode**: a deterministic stand-in for the model built from 
 rules. It needs no API key and costs nothing. It exists for development and CI and says
 nothing about the quality of a real model; the UI shows a "Mock mode" badge.
 
-To use the real model, put the settings in a local `.env` file (git-ignored; see
-`.env.example`) or in environment variables:
+## Backends
+
+Choose one with `LLM_BACKEND`, in a local `.env` file (git-ignored, see `.env.example`)
+or an environment variable. A backend never switches to another one on its own.
+
+| `LLM_BACKEND` | Model | Billing | Use it for |
+|---|---|---|---|
+| `mock` (default) | none: keyword rules | free | development, tests, CI |
+| `claude_code` | Claude through your local Claude Code login | your Claude subscription: usage limits, no per-token charge | personal local runs and evaluation |
+| `anthropic` | Claude through the Anthropic API | pay per token (`ANTHROPIC_API_KEY`) | a deployed demo, API evaluation |
+
+### Using your Claude subscription (`claude_code`)
+
+Requirements:
+
+- Claude Code installed and logged in with your subscription; open it once and sign in.
+- The optional extra, which brings the Claude Agent SDK and its bundled CLI:
+
+```bash
+uv sync --extra claude-code
+# .env
+LLM_BACKEND=claude_code
+LLM_MODEL=claude-sonnet-5-5   # optional
+```
+
+How it behaves:
+
+- The app does not read credential files; Claude Code uses its own login.
+- If `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` or a cloud-provider
+  variable is set, Claude Code would use it instead of the subscription and could bill the
+  API, so the backend refuses to start.
+- The agent runs inside Claude Code with everything else switched off:
+  - no built-in tools (no shell, files or web);
+  - none of your MCP servers, settings, hooks, plugins or CLAUDE.md files;
+  - no session saved to disk.
+
+  Its only tool is the app's `fetch_company_page`, with the same validation and SSRF
+  protection. `--bare` is not used, because it ignores the subscription login.
+- Limits: turns per run (`CLAUDE_CODE_MAX_TURNS`), a timeout per run
+  (`CLAUDE_CODE_TIMEOUT_S`) and one Claude Code process at a time
+  (`CLAUDE_CODE_CONCURRENCY`).
+- When the subscription's usage limit is reached, or paid overage would start, the run
+  stops with a message that names the limit window and its reset time. Nothing falls back
+  to the API.
+
+> **Personal, local use only.** Anthropic does not allow offering claude.ai login or
+> subscription rate limits in products for other people. A public demo must use the
+> `anthropic` backend (or `mock`), never your subscription.
+
+### Using the Anthropic API (`anthropic`)
 
 ```bash
 LLM_BACKEND=anthropic
 ANTHROPIC_API_KEY=...        # never commit this
-LLM_MODEL=claude-sonnet-5-5  # optional, this is the default
 ```
 
-Live mode calls a paid API. Every request counts against the limits described below.
+Every request is billed and counts against the limits described below.
 
 ## Example
 
@@ -110,7 +159,7 @@ All settings are environment variables; `.env.example` lists every one with its 
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `LLM_BACKEND` | `mock` | `mock` (free stand-in) or `anthropic` (real API) |
+| `LLM_BACKEND` | `mock` | `mock`, `claude_code` (subscription) or `anthropic` (API) |
 | `LLM_MODEL` | `claude-sonnet-5-5` | one model for the agent and the evidence check |
 | `LLM_EFFORT` | `low` | effort level sent to the API |
 | `MAX_TOOL_CALLS` / `MAX_LLM_CALLS` | 3 / 4 | tool calls and agent turns per company |
@@ -129,19 +178,27 @@ were committed before any live run and still need human review. See
 [eval/README.md](eval/README.md).
 
 ```bash
-uv run python -m screener.evaluate --mode mock                                        # free pipeline check
-uv run python -m screener.evaluate --mode live --only 01-valves-fit-homepage --yes    # one case, real model
-uv run python -m screener.evaluate --mode live --yes                                  # whole set, real model
+uv run python -m screener.evaluate --mode mock                                             # free pipeline check
+uv run python -m screener.evaluate --mode claude-code --only 01-valves-fit-homepage --yes  # real model, subscription
+uv run python -m screener.evaluate --mode api --only 01-valves-fit-homepage --yes          # real model, API (paid)
 ```
 
-Pages always come from the saved files, also in live mode. A live run prints its hard
-spending cap first and does not start without `--yes`. Reports include schema-valid rate,
-accuracy, macro-F1, a confusion matrix, fact checks, time, tokens and cost at explicitly
-listed tariffs.
+Pages always come from the saved files, with every backend. A real-model run prints its
+limits first and does not start without `--yes`. Reports include schema-valid rate,
+accuracy, macro-F1, a confusion matrix, fact checks, time and tokens. Each report also
+states the backend and how it is billed:
+- a cost for the API, at explicitly listed tariffs;
+- for Claude Code, "no per-token charge" plus an API-equivalent figure that is clearly
+  marked as an estimate, not a charge.
 
-**Current results.** Live evaluation has **not been run yet**; no API key is connected.
-The mock run scores 13/20, but it only shows that the pipeline works end to end; keyword
-rules are not a model. Methodology and details: [docs/evaluation.md](docs/evaluation.md).
+**Current results.**
+- **Mock run:** 13/20. It only shows that the pipeline works end to end; keyword rules
+  are not a model.
+- **Claude Code, one case** (2026-11-25): case 01 was classified correctly (fit),
+  13 s, 3 model requests.
+- **Full set:** not run yet with either real backend.
+
+Details: [docs/evaluation.md](docs/evaluation.md).
 
 ## Security and cost controls
 
@@ -176,6 +233,8 @@ not say how quickly it takes effect, so it does not replace the app's own limits
 - Geography means where the company itself is located. Whether a place belongs to a
   region (for example "DACH") is judged by the model.
 - Exclusions are judged only on what the pages state.
+- The `claude_code` backend is for personal local use: it needs an installed, logged-in
+  Claude Code and must not serve other people.
 - Single process; runs are lost on restart.
 - Costs are computed from reported usage. Failed requests report none, and a request that
   timed out on the client side may still have been billed.
@@ -191,13 +250,14 @@ This project was built with an AI coding assistant, Claude Code by Anthropic.
   example: keep company locations separate from markets served; no fallback to another
   model; batch the evidence check and do not treat its verdicts as proof; keep tool
   calls on the same site after redirects; count every request, including retries,
-  against the budgets.
+  against the budgets; run the model locally through a Claude Code subscription, with no
+  automatic switch to the paid API.
 - **The assistant** wrote the code, tests, synthetic evaluation cases with their expected
   answers, and this documentation, and ran the local checks: tests, linting, mock
   evaluation and manual smoke tests against public websites. Commits carry a
   `Co-Authored-By: Claude` trailer.
 - **Not done yet:** an independent code review, a human review of the evaluation labels,
-  and a live evaluation with the real model.
+  and a full evaluation with a real model (so far one case through Claude Code).
 
 ## License
 

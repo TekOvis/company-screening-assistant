@@ -47,16 +47,24 @@ change to expected answers must be listed in the change log below, with a reason
 
 ```bash
 uv run python -m screener.evaluate --mode mock
-uv run python -m screener.evaluate --mode live --only 01-valves-fit-homepage --yes
-uv run python -m screener.evaluate --mode live --yes
+uv run python -m screener.evaluate --mode claude-code --only 01-valves-fit-homepage --yes
+uv run python -m screener.evaluate --mode api --only 01-valves-fit-homepage --yes
 ```
 
 - **mock**: the full application with the keyword-rule stand-in. Free and used in CI. It
   shows that the pipeline works; it does not measure model quality.
-- **live**: the real model. Pages still come from the saved files; `.example` domains are
-  never requested. Before starting, the runner prints the hard caps and their worst-case
-  price at the listed tariffs, and it does not start without `--yes`. The plan is to run
-  one case first, check the result and the cost, and only then run the whole set.
+- **claude-code**: the real model through the local Claude Code login. Usage counts
+  against the Claude subscription's limits; there is no per-token charge.
+- **api**: the real model through the Anthropic API, billed per token. Before starting,
+  the runner prints the hard caps and their worst-case price at the listed tariffs.
+
+Both real-model modes use the saved pages; `.example` domains are never requested. Both
+print their limits and do not start without `--yes`. The plan is to run one case first,
+check the result and the usage, and only then run the whole set.
+
+Reports state the backend and how it is billed. For Claude Code they show
+"no per-token charge" and, separately, an API-equivalent figure: what the reported tokens
+would cost at API tariffs. That figure is an estimate for comparison, not a charge.
 
 Each run writes `report.md`, `report.json` and `results.jsonl` to `eval/runs/<time>-<mode>/`
 (git-ignored). Reports record the model, effort, limits, a fingerprint of the dataset and
@@ -99,13 +107,37 @@ The misses are what keyword rules cannot do: understand "distributor" or "bakery
 valves", read German or Polish text, or decide to fetch an About page to look for
 ownership. These numbers say nothing about a real model.
 
-### Live run
+### Claude Code, one case (2026-11-25)
 
-**Not run yet**: no API key is connected. When it is, the results go here with:
-- the date, model and effort;
+A first check of the `claude_code` backend, not an evaluation result. Case
+`01-valves-fit-homepage`, model `claude-sonnet-5-5`, effort `low`.
+
+| | |
+|---|---|
+| Final label | fit, as expected; the model's own label was also fit |
+| Time | 13.1 s |
+| Model requests | 3 (2 agent turns + 1 evidence check), 0 failed |
+| Tokens | 4 input, 984 output, 6,066 cache write (Claude Code caches the prompt itself) |
+| Billing | Claude subscription, no per-token charge. API-equivalent estimate: $0.025, not a charge |
+| Session | credential source reported as `none` (no API key); tools available: `StructuredOutput` and `mcp__screener__fetch_company_page` only; no session saved to disk |
+
+The evidence checks removed two facts:
+- The description: the model quoted the right sentence, but labelled the quote as
+  supporting the name and business, not the description.
+- A "market" ("chemical plants and refineries"): this is a customer segment, not a place.
+
+The final label did not depend on either. Whether a description should also accept quotes
+labelled for the business is an open design question. It has not been changed after
+seeing this run.
+
+### Full set with a real model
+
+**Not run yet** with either backend. Results go here with:
+- the date, backend, model and effort;
 - the dataset and prompt fingerprints;
 - the full metric tables;
-- the actual token usage and cost, including the evidence-check requests and any retries.
+- the token usage and how it was billed, including the evidence-check requests and any
+  retries.
 
 ## Threats to validity
 

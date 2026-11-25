@@ -15,8 +15,10 @@ jobs:
       - uses: astral-sh/setup-uv@v10
         with:
           python-version: "3.12"
+      # The claude-code extra is installed only so its adapter tests run; they use a fake
+      # query() and never start Claude Code or use a subscription.
       - name: Install locked dependencies
-        run: uv sync --locked
+        run: uv sync --locked --extra claude-code
       - name: Lint
         run: uv run ruff check .
       - name: Format check

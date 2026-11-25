@@ -30,6 +30,17 @@ sequenceDiagram
   V-->>P: verified facts + label from explicit rules
 ```
 
+## Backends
+
+| Backend | Agent loop | Evidence check | Billing |
+|---|---|---|---|
+| `mock` | our loop (`agent.py`) over a keyword-rule stand-in | same stand-in | none |
+| `anthropic` | our loop over `messages.create` (Anthropic API) | `messages.create` | per token |
+| `claude_code` | inside Claude Code (Agent SDK), our tool as an in-process MCP server | one-turn Claude Code call through a `messages.create` adapter | Claude subscription |
+
+All three use the same prompts, schemas, fetcher, evidence rules and budgets. A backend
+never switches to another one on its own.
+
 ## Modules
 
 | Module | Responsibility |
@@ -42,7 +53,8 @@ sequenceDiagram
 | `agent.py` | the agent loop: structured output, tool calls, every stop reason handled |
 | `tools.py` | `fetch_company_page`: definition, argument validation, execution |
 | `verify.py` | two-stage evidence verification and the label rules |
-| `llm.py` | client creation, retries, user-safe error messages |
+| `llm.py` | client creation per backend, retries, user-safe error messages |
+| `claude_code.py` | the `claude_code` backend: locked-down Claude Code options, our tool as an MCP server, limits, subscription-limit handling |
 | `budget.py` | per-company and per-run token and request budgets |
 | `pipeline.py` | per-company orchestration and bounded concurrency |
 | `web.py`, `templates/`, `static/` | form, results table, exports, JSON API, in-memory run store |
@@ -137,6 +149,42 @@ transparency and evaluation.
   limit.
 - Error messages shown to users are written by the app and never include request headers
   or keys.
+
+## Claude Code backend
+
+Requirements: Claude Code installed and logged in with a Claude subscription, and the
+optional extra (`uv sync --extra claude-code`), which installs the Agent SDK and its
+bundled CLI. For personal local use only: Anthropic does not allow offering claude.ai login
+or subscription rate limits in products for other people.
+
+- **Authentication.** It is left to the Claude Code CLI; the app never reads credential
+  files. `--bare` is not used, because it accepts only API keys. If `ANTHROPIC_API_KEY`,
+  `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` or a cloud-provider switch is set, the
+  backend refuses to start: in print mode Claude Code would use that instead of the
+  subscription. The session's `apiKeySource` is logged (only the source name); the first
+  real run reported `none`, meaning no API key was used.
+- **Locked down.** The agent is limited to what it needs:
+  - `tools=[]`: no built-in tools;
+  - `strict_mcp_config=True`: only the app's own MCP server, none of the user's;
+  - `setting_sources=[]`: no user, project or local settings, hooks, plugins or
+    CLAUDE.md;
+  - `permission_mode="dontAsk"`: nothing prompts, anything not pre-approved is denied;
+  - `--no-session-persistence` and `--disable-slash-commands`;
+  - the app's own system prompt and an empty working directory.
+
+  In the first real run the session listed only `StructuredOutput` and
+  `mcp__screener__fetch_company_page` as tools.
+- **Tool.** `fetch_company_page` runs in the app's process, through the same code as the
+  API backend: path validation, SSRF checks, the same-site rule and the call limit.
+- **Output.** `output_format` with the `Assessment` schema; Claude Code validates and
+  re-prompts, then the app validates again with Pydantic. Turn-limit and schema-retry
+  failures become `invalid_output`.
+- **Limits.** `CLAUDE_CODE_MAX_TURNS` per run, `CLAUDE_CODE_TIMEOUT_S` per run, and
+  `CLAUDE_CODE_CONCURRENCY` processes at once. Budgets reserve a turn before each run and
+  are charged with the reported usage, counting every turn as a request.
+- **Subscription limit.** A rate-limit event with status `rejected`, any paid `overage`,
+  or a `rate_limit` / `billing_error` reply stops the stream and the whole run. The
+  message names the window and its reset time; nothing switches to the API.
 
 ## Page fetching and SSRF protection
 
