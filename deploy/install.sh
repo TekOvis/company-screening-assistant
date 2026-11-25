@@ -25,8 +25,8 @@ PORT=8001
 [[ $COMMIT =~ ^[0-9a-f]{7,40}$ ]] || { echo "bad commit id: $COMMIT" >&2; exit 1; }
 python3 -c 'import sys; sys.exit(sys.version_info[:2] < (3, 12))' \
     || { echo "python3 >= 3.12 is required" >&2; exit 1; }
-if ss -ltnH "sport = :$PORT" | grep -q .; then
-    echo "port $PORT is already in use" >&2; exit 1
+if ! systemctl is-active -q company-screener && ss -ltnH "sport = :$PORT" | grep -q .; then
+    echo "port $PORT is already in use by something else" >&2; exit 1
 fi
 if [[ -e $RELEASE ]]; then
     echo "release $COMMIT already exists: $RELEASE" >&2; exit 1
@@ -61,6 +61,13 @@ else
     echo "kept existing $ETC/screener.env"
 fi
 
+echo "== backup of the previous unit and release pointer"
+BACKUP="/var/backups/company-screener/$(date -u +%Y%m%dT%H%M%SZ)"
+install -d -m 700 "$BACKUP"
+if [[ -f $UNIT ]]; then cp -a "$UNIT" "$BACKUP/"; fi
+if [[ -L $BASE/current ]]; then readlink "$BASE/current" > "$BACKUP/previous-current.txt"; fi
+echo "backup: $BACKUP ($(ls "$BACKUP" | tr '\n' ' '))"
+
 echo "== current release"
 # Before the unit check: systemd-analyze verify needs the ExecStart binary to exist.
 ln -sfn "$RELEASE" "$BASE/current.new"
@@ -87,7 +94,7 @@ assert s.llm_backend == "mock" and s.public_demo and s.access_token, "unsafe set
 assert s.anthropic_api_key is None, "no API key in mock mode"
 print("settings ok:", s.llm_backend, "max_urls", s.max_urls_per_request,
       "active", s.max_active_runs, "concurrency", s.concurrency,
-      "fetch_max_bytes", s.fetch_max_bytes)
+      "fetch_max_bytes", s.fetch_max_bytes, "run_timeout_s", s.run_timeout_s)
 '
 )
 cd /  # the service user cannot read root's working directory

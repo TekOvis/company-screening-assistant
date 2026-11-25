@@ -100,8 +100,9 @@ These are measurements on another OS and machine. The server check below repeats
 
 All responses were 200. The other service logged no warnings or errors in that window.
 - Its application API was not slowed down.
-- **Full HTTPS requests were about 1.8 times slower** (median +77 ms) while the job ran:
-  TLS work in Caddy competes for the single core.
+- **Full HTTPS requests were about 1.8 times slower** (median +77 ms) while the job ran.
+  *Assumed cause, not confirmed by measurement:* TLS and proxy work in Caddy competing
+  with the job for the single core.
 
 The limits reduced the effect, but did not remove it.
 
@@ -128,6 +129,17 @@ The unit sets:
 
 300 MB is about 2.3 times the peak measured on the server for the largest job. If the
 service exceeds it, the kernel kills this service only, and systemd restarts it.
+
+**A memory limit does not prevent hangs.** Two mechanisms bound a stuck screening:
+- **Per screening:** `RUN_TIMEOUT_S` (300 s) stops it. Unfinished companies are skipped,
+  finished results are kept, and the run's slot is freed. The same holds for an internal
+  error. Tests cover a site that never answers, the JSON API and an internal error.
+- **Per page:** fetching has its own connect, read and total timeouts.
+
+These bounds do not cover a blocked event loop, for example a pathological page that keeps
+the HTML parser busy. Then the time limit cannot fire, `/healthz` stops answering, and
+neither `Restart=on-failure` nor `MemoryMax` notices it. Catching that would need an
+external health check that restarts the service. It is not set up yet.
 
 If the slower HTTPS during a large job is not acceptable, there are three options:
 - lower `CPUQuota`, so jobs take longer but leave more of the core free;
