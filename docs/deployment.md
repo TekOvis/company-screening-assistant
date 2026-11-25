@@ -1,11 +1,10 @@
 # Deploying the demo
 
-**Status (2026-11-25):** installed on the server but **not activated**.
-- Release `d9285ddfbf92`, installed with `install.sh`. The service is disabled and not
-  running; there is no DNS record yet, and Caddy is unchanged.
-- The planned first demo is a **mock-mode** service at `screener.rustwatchtower.net`, on a
-  small VPS shared with another service, without Docker. See
-  [Shared VPS without Docker](#shared-vps-without-docker-planned-first-demo).
+**Status (2026-11-25, 19:35 UTC):** the mock demo is live at
+<https://screener.rustwatchtower.net>, release `9c3079ed1570`. An access token is
+required. See [Activation record](#activation-record-2026-11-25).
+- It runs as a **mock-mode** service on a small VPS shared with another service, without
+  Docker. See [Shared VPS without Docker](#shared-vps-without-docker-planned-first-demo).
 - The Dockerfile route below is kept for other hosts. The image has not been built yet,
   because Docker is not available on the development machine.
 
@@ -222,6 +221,73 @@ sudo bash /tmp/deploy/install.sh /root/screener-<commit>.tar.gz <commit>
 | Service | `systemctl disable --now company-screener` |
 | Release | point `/opt/company-screener/current` at the previous release (`ln -sfn … current.new && mv -T current.new current`), then `systemctl restart company-screener` |
 | Everything | stop and disable the service; remove the unit and `systemctl daemon-reload`; `rm -rf /opt/company-screener /etc/company-screener`; `userdel screener`; remove the DNS record |
+
+### Activation record (2026-11-25)
+
+**Releases.**
+- `d9285ddfbf92` was installed first, without activation.
+- `9f78dd0d9af9` brought the unit without `MemoryHigh`. Its first start failed with
+  `203/EXEC`: `install.sh` had built the venv in a temporary directory and moved it, so
+  `venv/bin/uvicorn` pointed at a missing interpreter.
+- `9c3079ed1570` fixed this. It builds the venv in place, starts the app with
+  `python -m uvicorn`, and `install.sh` checks that command. The service runs this release.
+- The two older releases have the same venv problem. They would start only with the
+  current unit.
+
+**Checks** (all passed):
+- **Loopback.**
+  - mock backend;
+  - without the token, `/` redirects to `/login`, and the API and `/openapi.json` answer
+    401; a wrong token is refused;
+  - with the token, the banner and 5 examples are shown; example 01 gives `fit`, as
+    expected;
+  - JSON and CSV export work.
+- **HTTPS.**
+  - Let's Encrypt certificate;
+  - HSTS, `nosniff`, `DENY` and `no-referrer` headers, no `Server` header;
+  - the same refusals without the token, from the server and from outside;
+  - login through the form, with an `HttpOnly; Secure; SameSite=lax` cookie;
+  - example 04 gives `insufficient_information`, as expected; the CSV downloads as an
+    attachment.
+- **Slot after an error.** A screening of an unresolvable host ended with `fetch_error`.
+  The next screening was accepted at once (303).
+  - The time limit itself was tested locally (`tests/test_run_limits.py`), not on the
+    server.
+- **Token.** It is not in any URL: login posts it in the body and redirects to `/`. It
+  was not found in:
+  - the service or Caddy journals, `/var/log/caddy`, syslog, or the release directories;
+  - the Git working tree or history, or the session's temporary files.
+- **The other service.** Its site and API answered 200 with normal response times, and
+  all three services were active.
+
+**Memory of the running service**, after two small examples and one failed screening.
+This was not a maximum job.
+
+| Source | Current | Peak |
+|---|---|---|
+| systemd `MemoryCurrent` / `MemoryPeak` | 83 MB | 83 MB |
+| cgroup `memory.current` / `memory.peak` | 83 MB | 83 MB |
+| process `VmRSS` / `VmHWM` | 98.5 MB | 98.5 MB |
+
+**Discrepancies, kept separate from the results.**
+- **Process vs cgroup.** The process's RSS is about 15 MB higher than the cgroup's
+  count. A plausible but unverified explanation: RSS includes shared file pages (the
+  Python binary, libraries) that are charged to the cgroup that loaded them first.
+- **The transient load-check unit.** systemd reported `Memory peak: 1.3M`, while the
+  process measured 129 MB. This is unexplained.
+- **So 129 MB is not a confirmed peak of the service.** It is a single process-level
+  measurement from the transient test. The service's cgroup peak under a maximum job has
+  not been measured.
+
+**Backups and rollback.**
+
+| What | Where / how |
+|---|---|
+| Caddyfile before the change | `/var/backups/company-screener/caddy-20261125T193136Z/Caddyfile`, also `/etc/caddy/Caddyfile.bak-20261125T193136Z` |
+| Undo Caddy | `cp -a /var/backups/company-screener/caddy-20261125T193136Z/Caddyfile /etc/caddy/Caddyfile`, then `runuser -u caddy -- caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`, then `systemctl reload caddy` |
+| Units and release pointers before each install | `/var/backups/company-screener/20261125T192759Z/` (unit with `MemoryHigh`, pointer `d9285ddfbf92`) and `…/20261125T193045Z/` (unit of `9f78dd0d9af9`, pointer `9f78dd0d9af9`). Both units use `venv/bin/uvicorn` and would fail with `203/EXEC`, so restore them only for reference |
+| Stop the demo | `systemctl disable --now company-screener` |
+| Remove everything | stop and disable the service, `rm /etc/systemd/system/company-screener.service`, `systemctl daemon-reload`, `rm -rf /opt/company-screener /etc/company-screener /var/backups/company-screener`, `userdel screener`, `rm /root/screener-*.tar.gz`, undo Caddy as above, delete the DNS record |
 
 ## Docker route (other hosts)
 
