@@ -34,12 +34,14 @@ _LINKS_RE = re.compile(r'<site_links page="[^"]*">\n(.*?)\n</site_links>', re.S)
 _WORD_RE = re.compile(r"[a-z][a-z\-]+")
 _SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
 _PLACE = r"([A-Z][\w'-]*(?:(?:,\s*(?:and\s+)?|\s+and\s+|\s+)[A-Z][\w'-]*)*)"
+# Cue words match in any case ("Headquartered in ..." starts many sentences); place names
+# must still start with a capital letter.
 _OWN_LOCATION_RE = re.compile(
-    r"\b(?:headquartered|headquarters|head office|based|located|registered|offices?|plants?|"
+    r"\b(?i:headquartered|headquarters|head office|based|located|registered|offices?|plants?|"
     r"factor(?:y|ies)|facilit(?:y|ies)|warehouses?|production sites?)\b[^.]*?\bin\s+" + _PLACE
 )
 _MARKET_RE = re.compile(
-    r"\b(?:serv(?:e|es|ing)|customers?|clients?|sell(?:s|ing)?|export(?:s|ing)?|"
+    r"\b(?i:serv(?:e|es|ing)|customers?|clients?|sell(?:s|ing)?|export(?:s|ing)?|"
     r"ship(?:s|ping)?|deliver(?:s|ing)?|distribut\w*)\b[^.]*?\b(?:in|to|across|throughout)\s+"
     + _PLACE
 )
