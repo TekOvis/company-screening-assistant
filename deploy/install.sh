@@ -61,14 +61,15 @@ else
     echo "kept existing $ETC/screener.env"
 fi
 
+echo "== current release"
+# Before the unit check: systemd-analyze verify needs the ExecStart binary to exist.
+ln -sfn "$RELEASE" "$BASE/current.new"
+mv -T "$BASE/current.new" "$BASE/current"
+
 echo "== systemd unit (installed, not enabled, not started)"
 install -m 644 "$RELEASE/deploy/company-screener.service" "$UNIT"
 systemctl daemon-reload
 systemd-analyze verify "$UNIT"
-
-echo "== current release"
-ln -sfn "$RELEASE" "$BASE/current.new"
-mv -T "$BASE/current.new" "$BASE/current"
 
 echo "== checks"
 # Settings are validated with the real env file (as root, which can read it); the app
