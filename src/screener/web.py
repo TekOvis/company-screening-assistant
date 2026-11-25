@@ -10,6 +10,7 @@ import asyncio
 import logging
 import re
 import secrets
+import time
 from collections import OrderedDict
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -44,6 +45,7 @@ _FIELD_LABELS = {
 }
 
 FetcherFactory = Callable[[], PageFetcher]
+BUSY_MESSAGE = "Too many screenings are running right now. Please try again in a minute."
 
 # How each evidence check result is shown (text, not just colour).
 CHECK_LABELS = {
@@ -57,20 +59,53 @@ CHECK_LABELS = {
 }
 
 
-class RunStore:
-    """The most recent runs, kept in memory only (no database by design)."""
+class StoreFullError(RuntimeError):
+    """No free slot: every stored run is still in progress."""
 
-    def __init__(self, max_runs: int = 100) -> None:
-        self._runs: OrderedDict[str, ScreeningRun] = OrderedDict()
+
+class RunStore:
+    """Recent runs, kept in memory only (no database by design).
+
+    Bounded in two ways: finished runs expire ``ttl_s`` seconds after they were created,
+    and at most ``max_runs`` runs are kept (the oldest finished ones are dropped first).
+    Runs in progress are never dropped; how many may run at once is limited separately.
+    """
+
+    def __init__(
+        self, max_runs: int, ttl_s: float, clock: Callable[[], float] = time.monotonic
+    ) -> None:
+        self._runs: OrderedDict[str, tuple[float, ScreeningRun]] = OrderedDict()
         self._max_runs = max_runs
+        self._ttl_s = ttl_s
+        self._clock = clock
+
+    def __len__(self) -> int:
+        return len(self._runs)
+
+    def _purge_expired(self) -> None:
+        now = self._clock()
+        for run_id, (created, run) in list(self._runs.items()):
+            if run.status != "running" and now - created > self._ttl_s:
+                del self._runs[run_id]
+
+    def active_count(self) -> int:
+        return sum(1 for _, run in self._runs.values() if run.status == "running")
 
     def add(self, run: ScreeningRun) -> None:
-        self._runs[run.run_id] = run
-        while len(self._runs) > self._max_runs:
-            self._runs.popitem(last=False)
+        self._purge_expired()
+        while len(self._runs) >= self._max_runs:
+            oldest_finished = next(
+                (run_id for run_id, (_, r) in self._runs.items() if r.status != "running"), None
+            )
+            if oldest_finished is None:
+                raise StoreFullError("too many runs in progress")
+            del self._runs[oldest_finished]
+        self._runs[run.run_id] = (self._clock(), run)
 
     def get(self, run_id: str) -> ScreeningRun | None:
-        return self._runs.get(run_id)
+        self._purge_expired()
+        entry = self._runs.get(run_id)
+        return entry[1] if entry else None
 
 
 def parse_url_list(text: str) -> list[str]:
@@ -94,7 +129,7 @@ def create_app(
     settings = settings or get_settings()
     llm_client = client if client is not None else create_client(settings)
     make_fetcher: FetcherFactory = fetcher_factory or (lambda: HttpFetcher(settings))
-    runs = RunStore()
+    runs = RunStore(max_runs=settings.max_stored_runs, ttl_s=settings.run_ttl_s)
     tasks: set[asyncio.Task[None]] = set()
 
     templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -185,6 +220,10 @@ def create_app(
             "target_business": target_business,
             "exclusions": exclusions,
         }
+        if runs.active_count() >= settings.max_active_runs:
+            return templates.TemplateResponse(
+                request, "index.html", context(form=form, errors=[BUSY_MESSAGE]), status_code=429
+            )
         fetcher = make_fetcher()
         url_list, errors = validate_urls(fetcher, parse_url_list(urls))
         criteria: ScreeningCriteria | None = None
@@ -212,7 +251,13 @@ def create_app(
             criteria=criteria,
             urls=url_list,
         )
-        runs.add(run)
+        try:
+            runs.add(run)
+        except StoreFullError:
+            await fetcher.aclose()
+            return templates.TemplateResponse(
+                request, "index.html", context(form=form, errors=[BUSY_MESSAGE]), status_code=429
+            )
         task = asyncio.create_task(execute_run(run, fetcher))
         tasks.add(task)
         task.add_done_callback(tasks.discard)
@@ -247,7 +292,10 @@ def create_app(
     @app.post("/api/screen", response_model=ScreeningRun)
     async def api_screen(payload: ScreeningRequest) -> ScreeningRun:
         """Synchronous JSON API: waits until all companies are processed."""
+        if runs.active_count() >= settings.max_active_runs:
+            raise HTTPException(status_code=429, detail=BUSY_MESSAGE)
         fetcher = make_fetcher()
+        run: ScreeningRun | None = None
         try:
             url_list, errors = validate_urls(fetcher, payload.urls)
             if errors:
@@ -259,6 +307,10 @@ def create_app(
                 criteria=payload.criteria,
                 urls=url_list,
             )
+            try:
+                runs.add(run)  # counts as active while it runs
+            except StoreFullError as exc:
+                raise HTTPException(status_code=429, detail=BUSY_MESSAGE) from exc
             run_budget = RunBudget.from_settings(settings)
             run.results = await screen_companies(
                 url_list,
@@ -269,10 +321,13 @@ def create_app(
                 run_budget=run_budget,
             )
             run.stop_reason = run_budget.stop_reason
-            run.status, run.finished_at = "done", utc_now()
-            runs.add(run)
+            run.status = "done"
             return run
         finally:
+            if run is not None and run.status == "running":
+                run.status, run.error = "failed", "the request ended before the run finished"
+            if run is not None:
+                run.finished_at = utc_now()
             await fetcher.aclose()
 
     @app.get("/healthz")

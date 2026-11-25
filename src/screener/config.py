@@ -10,7 +10,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     max_urls_per_request: int = Field(default=10, ge=1, le=10)
     concurrency: int = Field(default=3, ge=1, le=10)
 
+    # --- In-memory job store (no database by design) ---------------------------------
+    max_stored_runs: int = Field(default=50, ge=2, le=1000)
+    run_ttl_s: int = Field(default=2 * 3600, ge=60)  # finished runs are dropped after this
+    max_active_runs: int = Field(default=2, ge=1, le=20)
+
     # --- Page fetching ---------------------------------------------------------------
     fetch_connect_timeout_s: float = Field(default=5.0, gt=0)
     fetch_read_timeout_s: float = Field(default=10.0, gt=0)
@@ -55,6 +60,12 @@ class Settings(BaseSettings):
     fetch_max_redirects: int = Field(default=4, ge=0, le=10)
     page_text_max_chars: int = Field(default=15_000, ge=1_000)
     max_links_per_page: int = Field(default=40, ge=0, le=200)
+
+    @model_validator(mode="after")
+    def _check_consistency(self) -> Settings:
+        if self.max_active_runs >= self.max_stored_runs:
+            raise ValueError("MAX_ACTIVE_RUNS must be smaller than MAX_STORED_RUNS")
+        return self
 
 
 @lru_cache(maxsize=1)
