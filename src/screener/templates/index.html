@@ -26,7 +26,7 @@
         placeholder="e.g. industrial valves" value="{{ form.industry or '' }}">
     </div>
     <div>
-      <label for="geography">Geography</label>
+      <label for="geography">Geography <span class="hint">where the company itself is located</span></label>
       <input id="geography" name="geography" type="text" maxlength="200" required
         placeholder="e.g. Germany, DACH, Europe" value="{{ form.geography or '' }}">
     </div>

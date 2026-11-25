@@ -1,4 +1,6 @@
-"""Screening pipeline: fetch the homepage -> ask the LLM -> build a result row.
+"""Screening pipeline for each company:
+
+    fetch the homepage -> agent loop (may fetch more pages) -> evidence check -> result row
 
 Each company is processed independently; one failure never stops the others — except a
 reached API spend limit, which stops the whole run (see budget.RunBudget). A semaphore
@@ -14,11 +16,12 @@ from collections.abc import Callable
 from typing import Any
 
 from .agent import run_agent
-from .budget import CompanyBudget, RunBudget
+from .budget import BudgetExceeded, CompanyBudget, RunBudget
 from .config import Settings
 from .fetcher import FetchError, PageFetcher
 from .netguard import UnsafeURLError
 from .schemas import CompanyResult, ResultStatus, ScreeningCriteria
+from .verify import VerificationError, verify_assessment
 
 logger = logging.getLogger(__name__)
 
@@ -57,26 +60,46 @@ async def screen_company(
         outcome = await run_agent(
             client, settings, criteria, homepage, fetcher, budget=budget, usage=result.usage
         )
+        result.pages_fetched = list(outcome.pages)
+        result.tool_calls = outcome.tool_calls
+        if outcome.assessment is None:
+            return finish(outcome.status, outcome.error)
+
+        # Keep the model's own answer for transparency; only verified facts are shown.
+        result.raw_assessment = outcome.assessment
+        result.model_fit = outcome.assessment.fit
+        result.rationale = outcome.assessment.rationale
+        try:
+            verified = await verify_assessment(
+                outcome.assessment,
+                outcome.pages,
+                client=client,
+                settings=settings,
+                budget=budget,
+                usage=result.usage,
+            )
+        except BudgetExceeded as exc:
+            return finish("budget_exceeded", f"evidence check not run: {exc}")
+        except VerificationError as exc:
+            return finish("verification_error", f"evidence check failed: {exc}")
     except Exception:  # last-resort guard: one company must not break the whole run
         logger.exception("unexpected error while assessing %s", raw_url)
         return finish("internal_error", "internal error while assessing this company")
 
-    result.pages_fetched = list(outcome.pages)
-    result.tool_calls = outcome.tool_calls
-    assessment = outcome.assessment
-    if assessment is not None:
-        result.company_name = assessment.company_name
-        result.description = assessment.description
-        result.industry = assessment.industry
-        result.geography = assessment.geography
-        result.industry_match = assessment.industry_match
-        result.geography_match = assessment.geography_match
-        result.business_match = assessment.business_match
-        result.exclusion_triggered = assessment.exclusion_triggered
-        result.fit = assessment.fit
-        result.rationale = assessment.rationale
-        result.evidence = assessment.evidence
-    return finish(outcome.status, outcome.error)
+    result.company_name = verified.company_name
+    result.description = verified.description
+    result.industry = verified.industry
+    result.company_locations = verified.company_locations
+    result.markets_served = verified.markets_served
+    result.industry_match = verified.industry_match
+    result.geography_match = verified.geography_match
+    result.business_match = verified.business_match
+    result.exclusion = verified.exclusion
+    result.fit = verified.fit
+    result.decision_note = verified.decision_note
+    result.evidence = verified.evidence
+    result.warnings = verified.warnings
+    return finish("ok")
 
 
 async def screen_companies(

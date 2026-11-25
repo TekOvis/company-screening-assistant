@@ -14,13 +14,16 @@ CSV_COLUMNS = [
     "error",
     "company_name",
     "fit",
+    "model_fit",
+    "decision_note",
     "industry",
-    "geography",
+    "company_locations",
+    "markets_served",
     "description",
     "industry_match",
     "geography_match",
     "business_match",
-    "exclusion_triggered",
+    "exclusion",
     "rationale",
     "evidence",
     "warnings",
@@ -54,7 +57,7 @@ def run_to_csv(run: ScreeningRun) -> str:
 
 def _row(result: CompanyResult) -> dict[str, object]:
     evidence = " || ".join(
-        f"[{item.supports}] {item.quote} ({item.url})" for item in result.evidence
+        f"[{item.supports} | {item.check}] {item.quote} ({item.url})" for item in result.evidence
     )
     return {
         "position": result.position + 1,
@@ -63,15 +66,16 @@ def _row(result: CompanyResult) -> dict[str, object]:
         "error": result.error or "",
         "company_name": result.company_name or "",
         "fit": result.fit or "",
+        "model_fit": result.model_fit or "",
+        "decision_note": result.decision_note or "",
         "industry": result.industry or "",
-        "geography": "; ".join(result.geography),
+        "company_locations": "; ".join(result.company_locations),
+        "markets_served": "; ".join(result.markets_served),
         "description": result.description or "",
         "industry_match": result.industry_match or "",
         "geography_match": result.geography_match or "",
         "business_match": result.business_match or "",
-        "exclusion_triggered": ""
-        if result.exclusion_triggered is None
-        else str(result.exclusion_triggered).lower(),
+        "exclusion": result.exclusion or "",
         "rationale": result.rationale or "",
         "evidence": evidence,
         "warnings": " || ".join(result.warnings),

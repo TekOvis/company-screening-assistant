@@ -23,7 +23,7 @@
   {% endif %}
   <dl class="criteria">
     <dt>Industry</dt><dd>{{ run.criteria.industry }}</dd>
-    <dt>Geography</dt><dd>{{ run.criteria.geography }}</dd>
+    <dt>Geography</dt><dd>{{ run.criteria.geography }} <span class="hint">(where the company itself is located)</span></dd>
     <dt>Target business</dt><dd>{{ run.criteria.target_business }}</dd>
     <dt>Exclusions</dt><dd>{{ run.criteria.exclusions or "—" }}</dd>
   </dl>
@@ -34,6 +34,8 @@
       {{ usage.input_tokens }} input / {{ usage.output_tokens }} output tokens
       {% if backend == "mock" %}(mock estimates, nothing billed){% endif %}</span>
   </p>
+  <p class="hint">Facts are shown only when a verbatim quote from a fetched page supports them
+    and a second check agreed. That second check is automated too and can be wrong.</p>
 </section>
 
 {% if results %}
@@ -45,9 +47,9 @@
       <th scope="col">Company</th>
       <th scope="col">Fit</th>
       <th scope="col">Industry</th>
-      <th scope="col">Geography</th>
+      <th scope="col">Located in</th>
+      <th scope="col">Markets served</th>
       <th scope="col">Description</th>
-      <th scope="col">Rationale</th>
       <th scope="col">Evidence</th>
       <th scope="col">Notes</th>
     </tr>
@@ -66,11 +68,15 @@
       <td>
         {% if r.fit %}<span class="badge badge-{{ r.fit }}">{{ r.fit|replace("_", " ") }}</span>
         {% else %}<span class="badge badge-error">{{ r.status|replace("_", " ") }}</span>{% endif %}
+        {% if r.model_fit and r.model_fit != r.fit %}
+          <div class="hint">model said: {{ r.model_fit|replace("_", " ") }}</div>
+        {% endif %}
+        {% if r.decision_note %}<div class="hint">{{ r.decision_note }}</div>{% endif %}
       </td>
       <td>{{ r.industry or "—" }}</td>
-      <td>{{ r.geography|join("; ") if r.geography else "—" }}</td>
+      <td>{{ r.company_locations|join("; ") if r.company_locations else "—" }}</td>
+      <td>{{ r.markets_served|join("; ") if r.markets_served else "—" }}</td>
       <td>{{ r.description or "—" }}</td>
-      <td>{{ r.rationale or "—" }}</td>
       <td>
         {% if r.evidence %}
         <details>
@@ -79,10 +85,11 @@
           {% for e in r.evidence %}
             <li>
               <span class="tag">{{ e.supports|replace("_", " ") }}</span>
+              <span class="check check-{{ e.check }}">{{ CHECK_LABELS[e.check] }}</span>
               <q>{{ e.quote }}</q>
               {% set source = e.url|safe_href %}
               {% if source %}<a href="{{ source }}" rel="noopener noreferrer nofollow" target="_blank">source</a>{% endif %}
-              <div class="claim">{{ e.claim }}</div>
+              <div class="claim">{{ e.claim }}{% if e.check_note %} — {{ e.check_note }}{% endif %}</div>
             </li>
           {% endfor %}
           </ul>
@@ -92,6 +99,7 @@
       <td class="notes">
         {% if r.error %}<div class="error-text">{{ r.error }}</div>{% endif %}
         {% for w in r.warnings %}<div class="warning-text">{{ w }}</div>{% endfor %}
+        {% if r.rationale %}<div><span class="hint">Model rationale (not verified):</span> {{ r.rationale }}</div>{% endif %}
         <div class="hint">{{ r.usage.llm_requests }} API requests / {{ r.tool_calls }} tool calls ·
           {{ "%.1f"|format(r.duration_s) }} s</div>
       </td>

@@ -25,7 +25,8 @@ VALID_ANSWER = {
     "company_name": "Acme Valves",
     "description": "Designs and manufactures industrial valves for process industries.",
     "industry": "Industrial valves",
-    "geography": ["Stuttgart, Germany"],
+    "company_locations": ["Stuttgart, Germany"],
+    "markets_served": [],
     "industry_match": "met",
     "geography_match": "met",
     "business_match": "met",
@@ -34,7 +35,7 @@ VALID_ANSWER = {
     "rationale": "Valve manufacturer headquartered in Germany.",
     "evidence": [
         {
-            "supports": "geography",
+            "supports": "company_location",
             "claim": "The company is headquartered in Stuttgart, Germany.",
             "url": "https://acme-valves.example/",
             "quote": "Acme Valves GmbH is headquartered in Stuttgart, Germany.",

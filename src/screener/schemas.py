@@ -1,10 +1,11 @@
-"""Data models (Pydantic) for user input, the LLM's structured output and final results.
+"""Data models (Pydantic) for user input, the LLM's structured outputs and final results.
 
-Three groups:
-1. Input      — what the user submits (criteria + URLs).
-2. Assessment — the JSON object the LLM must return. Its JSON Schema is sent to the API
-                (structured output) and the reply is validated again here with Pydantic.
-3. Results    — what the app shows and exports, including errors, usage and warnings.
+1. Input       — what the user submits (criteria + URLs).
+2. Assessment  — the JSON object the agent model must return. Its JSON Schema is sent to
+                 the API (structured output) and the reply is validated again here.
+3. Verifier    — the JSON object the evidence verifier must return.
+4. Results     — what the app shows and exports: verified facts, evidence with the result
+                 of each check, the model's own (unverified) answer, errors and usage.
 """
 
 from __future__ import annotations
@@ -21,8 +22,24 @@ DISCLAIMER = (
 
 FitLabel = Literal["fit", "non_fit", "insufficient_information"]
 CriterionStatus = Literal["met", "not_met", "unknown"]
+ExclusionStatus = Literal["triggered", "not_triggered", "unknown"]
 EvidenceTarget = Literal[
-    "company_name", "description", "industry", "geography", "business", "exclusion"
+    "company_name",
+    "description",
+    "industry",
+    "company_location",
+    "market_served",
+    "business",
+    "exclusion",
+]
+CheckStatus = Literal[
+    "supported",  # passed stage 1 and the verifier agreed (not a proof)
+    "not_supported",  # the verifier said the quote does not state the claim
+    "unclear",  # the verifier found the quote ambiguous
+    "page_mismatch",  # the cited URL is not a page we fetched
+    "quote_not_found",  # the quote is not verbatim on the cited page
+    "value_not_in_quote",  # e.g. the place name is not in the quote
+    "not_checked",
 ]
 
 
@@ -33,6 +50,7 @@ class ScreeningCriteria(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     industry: str = Field(min_length=1, max_length=200)
+    # Compared with the company's OWN locations (HQ, offices, plants), not markets served.
     geography: str = Field(min_length=1, max_length=200)
     target_business: str = Field(min_length=1, max_length=1000)
     exclusions: str | None = Field(default=None, max_length=1000)
@@ -51,7 +69,7 @@ class ScreeningRequest(BaseModel):
     criteria: ScreeningCriteria
 
 
-# --- 2. Structured output expected from the LLM ---------------------------------------
+# --- 2. Structured output of the agent -----------------------------------------------
 
 
 class EvidenceItem(BaseModel):
@@ -89,15 +107,24 @@ class Assessment(BaseModel):
     industry: str | None = Field(
         max_length=200, description="Short industry label grounded in the text, or null."
     )
-    geography: list[str] = Field(
+    company_locations: list[str] = Field(
         max_length=20,
         description=(
-            "Places the text explicitly says the company is based in, has offices in, or "
-            "operates in, written as they appear in the text. Empty if not stated."
+            "Places where the text explicitly says the company itself is located "
+            "(headquarters, offices, plants, other own facilities), written as in the text."
+        ),
+    )
+    markets_served: list[str] = Field(
+        max_length=20,
+        description=(
+            "Places where the text explicitly says the company sells or serves customers, "
+            "written as in the text. Serving customers somewhere is not a location."
         ),
     )
     industry_match: CriterionStatus
-    geography_match: CriterionStatus
+    geography_match: CriterionStatus = Field(
+        description="Target geography vs company_locations only; markets served do not count."
+    )
     business_match: CriterionStatus
     exclusion_triggered: bool
     fit: FitLabel
@@ -105,7 +132,24 @@ class Assessment(BaseModel):
     evidence: list[EvidenceItem] = Field(max_length=30)
 
 
-# --- 3. Results ----------------------------------------------------------------------
+# --- 3. Structured output of the evidence verifier -------------------------------------
+
+
+class VerifierVerdict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    verdict: Literal["supported", "not_supported", "unclear"]
+    reason: str = Field(max_length=300)
+
+
+class VerifierOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    verdicts: list[VerifierVerdict] = Field(max_length=100)
+
+
+# --- 4. Results ----------------------------------------------------------------------
 
 ResultStatus = Literal[
     "ok",
@@ -115,6 +159,7 @@ ResultStatus = Literal[
     "invalid_output",
     "refused",
     "budget_exceeded",
+    "verification_error",
     "internal_error",
 ]
 
@@ -144,23 +189,35 @@ class Usage(BaseModel):
             setattr(self, name, getattr(self, name) + getattr(other, name))
 
 
+class CheckedEvidence(EvidenceItem):
+    check: CheckStatus = "not_checked"
+    check_note: str | None = None
+
+
 class CompanyResult(BaseModel):
     position: int = 0  # order in the user's input list
     input_url: str
     status: ResultStatus
     error: str | None = None
 
+    # Verified output: facts without supported evidence are removed.
     company_name: str | None = None
     description: str | None = None
     industry: str | None = None
-    geography: list[str] = Field(default_factory=list)
+    company_locations: list[str] = Field(default_factory=list)
+    markets_served: list[str] = Field(default_factory=list)
     industry_match: CriterionStatus | None = None
     geography_match: CriterionStatus | None = None
     business_match: CriterionStatus | None = None
-    exclusion_triggered: bool | None = None
+    exclusion: ExclusionStatus | None = None
     fit: FitLabel | None = None
-    rationale: str | None = None
-    evidence: list[EvidenceItem] = Field(default_factory=list)
+    decision_note: str | None = None  # how the rules produced `fit`
+    rationale: str | None = None  # the model's own explanation (not verified)
+    evidence: list[CheckedEvidence] = Field(default_factory=list)
+
+    # The model's answer before verification (kept for transparency and evaluation).
+    model_fit: FitLabel | None = None
+    raw_assessment: Assessment | None = None
 
     warnings: list[str] = Field(default_factory=list)
     pages_fetched: list[str] = Field(default_factory=list)

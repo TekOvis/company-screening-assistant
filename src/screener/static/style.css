@@ -70,5 +70,9 @@ table.results { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
 .evidence li { margin-bottom: 0.5rem; }
 .evidence .claim { color: var(--muted); font-size: 0.8rem; }
 .tag { display: inline-block; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.03em; background: #eef1f6; padding: 0 0.35rem; border-radius: 4px; }
+.check { display: inline-block; font-size: 0.75rem; padding: 0 0.35rem; border-radius: 4px; background: #eceef2; color: var(--muted); }
+.check-supported { background: #e3f4e8; color: var(--fit); }
+.check-not_supported, .check-quote_not_found, .check-page_mismatch, .check-value_not_in_quote { background: #fbe6e4; color: var(--nonfit); }
+.check-unclear { background: #fff2d1; color: var(--unknown); }
 .error-text { color: var(--nonfit); }
 .warning-text { color: var(--unknown); }

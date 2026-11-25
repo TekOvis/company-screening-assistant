@@ -45,6 +45,17 @@ _FIELD_LABELS = {
 
 FetcherFactory = Callable[[], PageFetcher]
 
+# How each evidence check result is shown (text, not just colour).
+CHECK_LABELS = {
+    "supported": "quote found · second check agreed",
+    "not_supported": "second check: does not support",
+    "unclear": "second check: unclear",
+    "page_mismatch": "cited page was not fetched",
+    "quote_not_found": "quote not found on the page",
+    "value_not_in_quote": "value not in the quote",
+    "not_checked": "not checked",
+}
+
 
 class RunStore:
     """The most recent runs, kept in memory only (no database by design)."""
@@ -88,6 +99,7 @@ def create_app(
 
     templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
     templates.env.filters["safe_href"] = safe_href
+    templates.env.globals["CHECK_LABELS"] = CHECK_LABELS
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):

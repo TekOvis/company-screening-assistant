@@ -15,8 +15,13 @@ from screener.web import create_app, parse_url_list, safe_href
 
 from .conftest import ACME_ABOUT, ACME_HOME, make_settings
 
+MARKET_ONLY_HTML = """<html><head><title>Danube Valves | Industrial valves</title></head><body>
+<p>We manufacture industrial valves for process industries.</p>
+<p>We serve customers in Germany and Austria.</p>
+</body></html>"""
+
 FORM = {
-    "urls": "https://acme-valves.example/\nhttps://missing.example/",
+    "urls": "https://acme-valves.example/\nhttps://market-only.example/\nhttps://missing.example/",
     "industry": "industrial valves",
     "geography": "Germany",
     "target_business": "Manufacturer of industrial valves",
@@ -30,6 +35,7 @@ def client():
     pages = {
         "https://acme-valves.example/": ACME_HOME,
         "https://acme-valves.example/about": ACME_ABOUT,
+        "https://market-only.example/": MARKET_ONLY_HTML,
     }
     app = create_app(
         settings,
@@ -69,15 +75,26 @@ def test_full_flow_form_to_table_and_exports(client):
 
     exported = json.loads(client.get(f"{run_path}/export.json").text)
     assert exported["status"] == "done"
-    assert [r["status"] for r in exported["results"]] == ["ok", "fetch_error"]
-    assert exported["results"][0]["fit"] == "fit"
-    assert exported["total_usage"]["llm_calls"] == 1
+    acme, market_only, missing = exported["results"]
+    assert [r["status"] for r in exported["results"]] == ["ok", "ok", "fetch_error"]
+    assert acme["fit"] == "fit"
+    assert acme["company_locations"] == ["Stuttgart", "Germany"]
+    assert {e["check"] for e in acme["evidence"]} == {"supported"}
+    # Serving customers in Germany is a market, not a location: geography stays unknown,
+    # and missing information gives insufficient_information, not an automatic non-fit.
+    assert market_only["company_locations"] == []
+    assert market_only["markets_served"] == ["Germany", "Austria"]
+    assert market_only["geography_match"] == "unknown"
+    assert market_only["fit"] == "insufficient_information"
+    assert missing["fit"] is None
+    assert exported["total_usage"]["llm_calls"] == 4  # agent + evidence check, 2 companies
     assert "Not financial" in exported["disclaimer"]
 
     csv_text = client.get(f"{run_path}/export.csv").text
     rows = list(csv.DictReader(io.StringIO(csv_text.lstrip("﻿"))))
     assert rows[0]["company_name"] == "Acme Valves"
-    assert rows[1]["status"] == "fetch_error"
+    assert rows[1]["markets_served"] == "Germany; Austria"
+    assert rows[2]["status"] == "fetch_error"
 
 
 def test_form_validation_errors(client):

@@ -1,13 +1,14 @@
 """Deterministic stand-in for the Anthropic client — used in mock mode and in tests.
 
 This is NOT a language model. It lets the whole application (request building, the
-tool-calling loop, schema validation, UI, exports and evaluation code) run in development
-and CI with no API key and no paid calls. Its answers come from simple keyword rules, so
-mock results say nothing about the quality of a real model.
+tool-calling loop, schema validation, evidence checks, UI, exports and evaluation code) run
+in development and CI with no API key and no paid calls. Its answers come from simple
+keyword rules, so mock results say nothing about the quality of a real model.
 
 It mimics the one SDK method the app uses — ``client.messages.create(**params)`` — and
 returns real ``anthropic.types.Message`` objects, so the app code path is the same as with
-the real client.
+the real client. It answers two kinds of requests: the screening agent and the evidence
+verifier (recognised by the <claims_to_check> block).
 """
 
 from __future__ import annotations
@@ -27,139 +28,53 @@ MOCK_MODEL_NAME = "mock-heuristic"
 _message_ids = itertools.count(1)
 
 _CRITERIA_RE = re.compile(r"<screening_criteria>\n(.*?)\n</screening_criteria>", re.S)
+_CLAIMS_RE = re.compile(r"<claims_to_check>\n(.*?)\n</claims_to_check>", re.S)
 _PAGE_RE = re.compile(r'<page url="([^"]+)">\n(.*?)\n</page>', re.S)
 _LINKS_RE = re.compile(r'<site_links page="[^"]*">\n(.*?)\n</site_links>', re.S)
 _WORD_RE = re.compile(r"[a-z][a-z\-]+")
 _SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
-_LOCATION_RE = re.compile(
-    r"\b(?:headquartered|headquarters|based|located|offices?|operates?|operating|"
-    r"presence|facilities|plants?|sites?)\b[^.]*?\bin\s+"
-    r"([A-Z][\w'-]*(?:(?:,\s*|\s+)[A-Z][\w'-]*)*)"
+_PLACE = r"([A-Z][\w'-]*(?:(?:,\s*(?:and\s+)?|\s+and\s+|\s+)[A-Z][\w'-]*)*)"
+_OWN_LOCATION_RE = re.compile(
+    r"\b(?:headquartered|headquarters|head office|based|located|registered|offices?|plants?|"
+    r"factor(?:y|ies)|facilit(?:y|ies)|warehouses?|production sites?)\b[^.]*?\bin\s+" + _PLACE
+)
+_MARKET_RE = re.compile(
+    r"\b(?:serv(?:e|es|ing)|customers?|clients?|sell(?:s|ing)?|export(?:s|ing)?|"
+    r"ship(?:s|ping)?|deliver(?:s|ing)?|distribut\w*)\b[^.]*?\b(?:in|to|across|throughout)\s+"
+    + _PLACE
+)
+_MARKET_WORD_RE = re.compile(
+    r"\b(?:customers?|clients?|serv(?:e|es|ing)|sell(?:s|ing)?|deliver\w*|export\w*|"
+    r"ship(?:s|ping)?|partners?|distributors?|resellers?|fairs?|exhibitions?)\b",
+    re.IGNORECASE,
 )
 _HELPFUL_PATH_RE = re.compile(
     r"about|company|contact|location|office|who-we-are|team|imprint|impressum", re.I
 )
 _STOPWORDS = {
-    "the",
-    "and",
-    "for",
-    "with",
-    "that",
-    "this",
-    "from",
-    "are",
-    "our",
-    "you",
-    "your",
-    "its",
-    "their",
-    "has",
-    "have",
-    "was",
-    "were",
-    "will",
-    "can",
-    "all",
-    "any",
-    "not",
-    "but",
-    "into",
-    "about",
-    "more",
-    "than",
-    "other",
-    "such",
-    "also",
-    "who",
-    "which",
-    "what",
-    "how",
-    "they",
-    "them",
-    "these",
-    "those",
-    "there",
-    "here",
-    "out",
-    "off",
-    "per",
-    "via",
-    "etc",
-    "company",
-    "companies",
-    "firm",
-    "firms",
-    "business",
-    "businesses",
-    "provider",
-    "providers",
-    "solution",
-    "solutions",
-    "industry",
-    "industries",
-    "sector",
-    "leading",
-    "global",
-    "world",
-    "small",
-    "medium",
-    "large",
-    "sized",
-    "size",
-    "quality",
-    "focus",
-    "focused",
-    "exclude",
-    "excluding",
-    "excluded",
-    "type",
-    "types",
-    "based",
-    "owned",
-}
+    "the", "and", "for", "with", "that", "this", "from", "are", "our", "you", "your", "its",
+    "their", "has", "have", "was", "were", "will", "can", "all", "any", "not", "but", "into",
+    "about", "more", "than", "other", "such", "also", "who", "which", "what", "how", "they",
+    "them", "these", "those", "there", "here", "out", "off", "per", "via", "etc",
+    "company", "companies", "firm", "firms", "business", "businesses", "provider",
+    "providers", "solution", "solutions", "industry", "industries", "sector", "leading",
+    "global", "world", "small", "medium", "large", "sized", "size", "quality", "focus",
+    "focused", "exclude", "excluding", "excluded", "type", "types", "based", "owned",
+    "description", "works",
+}  # fmt: skip
 _REGIONS = {
     "europe": {
-        "europe",
-        "austria",
-        "belgium",
-        "bulgaria",
-        "croatia",
-        "cyprus",
-        "czechia",
-        "czech republic",
-        "denmark",
-        "estonia",
-        "finland",
-        "france",
-        "germany",
-        "greece",
-        "hungary",
-        "ireland",
-        "italy",
-        "latvia",
-        "lithuania",
-        "luxembourg",
-        "malta",
-        "netherlands",
-        "poland",
-        "portugal",
-        "romania",
-        "slovakia",
-        "slovenia",
-        "spain",
-        "sweden",
-        "norway",
-        "switzerland",
-        "united kingdom",
-        "uk",
-        "iceland",
-        "ukraine",
+        "europe", "austria", "belgium", "bulgaria", "croatia", "cyprus", "czechia",
+        "czech republic", "denmark", "estonia", "finland", "france", "germany", "greece",
+        "hungary", "ireland", "italy", "latvia", "lithuania", "luxembourg", "malta",
+        "netherlands", "poland", "portugal", "romania", "slovakia", "slovenia", "spain",
+        "sweden", "norway", "switzerland", "united kingdom", "uk", "iceland", "ukraine",
     },
     "dach": {"germany", "austria", "switzerland"},
     "nordic": {"denmark", "finland", "iceland", "norway", "sweden"},
     "benelux": {"belgium", "netherlands", "luxembourg"},
     "north america": {"united states", "usa", "canada", "mexico"},
-}
+}  # fmt: skip
 
 ScriptItem = Message | Exception | Callable[[dict[str, Any]], Message]
 
@@ -169,7 +84,7 @@ class FakeAnthropicClient:
 
     * Without a script it answers with keyword heuristics (mock mode).
     * With a script it returns the given messages / raises the given errors in order
-      (unit tests of the agent loop).
+      (unit tests); a callable item is called with the request parameters.
     """
 
     def __init__(self, script: Iterable[ScriptItem] | None = None) -> None:
@@ -245,26 +160,35 @@ def tool_use_message(
 # --- Heuristic "brain" -----------------------------------------------------------------
 
 
+def heuristic_reply(params: dict[str, Any]) -> Message:
+    input_tokens = _estimate_tokens(params)
+    first_text = next(
+        (text for m in params.get("messages", []) for text, _ in _iter_blocks(_get(m, "content"))),
+        "",
+    )
+    if match := _CLAIMS_RE.search(first_text or ""):
+        verdicts = [_judge(item) for item in json.loads(match.group(1))]
+        text = json.dumps({"verdicts": verdicts})
+        return text_message(text, input_tokens=input_tokens, output_tokens=_tokens(text))
+
+    context = _read_context(params.get("messages", []))
+    assessment = _assess(context)
+    tool_choice = (params.get("tool_choice") or {}).get("type", "auto")
+    if params.get("tools") and tool_choice != "none":
+        if "unknown" in (assessment.industry_match, assessment.geography_match):
+            path = _next_helpful_path(context)
+            if path:
+                return tool_use_message({"path": path}, input_tokens=input_tokens, output_tokens=30)
+    text = assessment.model_dump_json()
+    return text_message(text, input_tokens=input_tokens, output_tokens=_tokens(text))
+
+
 class _Context:
     def __init__(self) -> None:
         self.criteria: ScreeningCriteria | None = None
         self.pages: dict[str, str] = {}  # url -> text
         self.links: list[str] = []  # candidate paths, in order of appearance
         self.requested_paths: set[str] = set()
-
-
-def heuristic_reply(params: dict[str, Any]) -> Message:
-    context = _read_context(params.get("messages", []))
-    input_tokens = _estimate_tokens(params)
-    tool_choice = (params.get("tool_choice") or {}).get("type", "auto")
-    if params.get("tools") and tool_choice != "none":
-        assessment = _assess(context)
-        if "unknown" in (assessment.industry_match, assessment.geography_match):
-            path = _next_helpful_path(context)
-            if path:
-                return tool_use_message({"path": path}, input_tokens=input_tokens, output_tokens=30)
-    text = _assess(context).model_dump_json()
-    return text_message(text, input_tokens=input_tokens, output_tokens=_tokens(text))
 
 
 def _read_context(messages: list[Any]) -> _Context:
@@ -327,6 +251,9 @@ def _assess(context: _Context) -> Assessment:
     if criteria is None:
         raise ValueError("mock client: screening criteria are missing")
     sentences = [(url, s) for url, text in context.pages.items() for s in _sentences(text)]
+    content_sentences = [
+        (url, s) for url, s in sentences if not s.startswith(("Title: ", "Meta description: "))
+    ]
     evidence: list[EvidenceItem] = []
 
     # Company name: first part of the homepage title.
@@ -336,19 +263,14 @@ def _assess(context: _Context) -> Assessment:
             title = sentence.removeprefix("Title: ")
             company_name = re.split(r"\s+[|\-–—:]\s+", title)[0].strip()[:200] or None
             if company_name:
-                evidence.append(
-                    _evidence("company_name", f"The company is called {company_name}.", url, title)
-                )
+                claim = f"The company is called {company_name}."
+                evidence.append(_evidence("company_name", claim, url, title))
             break
 
     # Business description: the sentence that best overlaps the target description.
     business_words = _content_words(criteria.target_business)
     best = max(
-        (
-            (len(business_words & _content_words(s)), url, s)
-            for url, s in sentences
-            if not s.startswith(("Title: ", "Meta description: "))
-        ),
+        ((len(business_words & _content_words(s)), url, s) for url, s in content_sentences),
         default=(0, None, None),
     )
     needed = max(1, math.ceil(0.4 * len(business_words)))
@@ -357,9 +279,7 @@ def _assess(context: _Context) -> Assessment:
     if description and best[1]:
         evidence.append(_evidence("description", description, best[1], description))
         if business_match == "met":
-            evidence.append(
-                _evidence("business", f"The company: {description}", best[1], description)
-            )
+            evidence.append(_evidence("business", description, best[1], description))
 
     # Industry: a sentence containing enough of the industry words.
     industry_words = _content_words(criteria.industry)
@@ -368,30 +288,26 @@ def _assess(context: _Context) -> Assessment:
         hits = industry_words & _content_words(sentence)
         if industry_words and len(hits) >= max(1, math.ceil(0.5 * len(industry_words))):
             industry, industry_match = criteria.industry, "met"
-            evidence.append(
-                _evidence("industry", f"The company works in {criteria.industry}.", url, sentence)
-            )
+            claim = f"The company works in {criteria.industry}."
+            evidence.append(_evidence("industry", claim, url, sentence))
             break
 
-    # Geography: explicit location statements only ("headquartered in X", "offices in Y").
-    geography: list[str] = []
-    geography_match: CriterionStatus = "unknown"
+    # Own locations and markets served are kept apart.
+    locations: list[str] = []
+    markets: list[str] = []
+    for url, sentence in content_sentences:
+        if own := _own_locations(sentence):
+            locations.extend(p for p in own if p not in locations)
+            claim = f"The company is located in {', '.join(own)}."
+            evidence.append(_evidence("company_location", claim, url, sentence))
+        if served := _markets(sentence):
+            markets.extend(p for p in served if p not in markets)
+            claim = f"The company serves customers in {', '.join(served)}."
+            evidence.append(_evidence("market_served", claim, url, sentence))
     allowed = _allowed_places(criteria.geography)
-    for url, sentence in sentences:
-        match = _LOCATION_RE.search(sentence)
-        if not match:
-            continue
-        places = [p.strip() for p in re.split(r",\s*", match.group(1)) if p.strip()]
-        geography.extend(p for p in places if p not in geography)
-        evidence.append(
-            _evidence(
-                "geography", f"The company states a presence in {match.group(1)}.", url, sentence
-            )
-        )
-        if any(_place_matches(p, allowed) for p in places):
-            geography_match = "met"
-    if geography and geography_match != "met":
-        geography_match = "not_met"
+    geography_match: CriterionStatus = "unknown"
+    if locations:
+        geography_match = "met" if any(_place_matches(p, allowed) for p in locations) else "not_met"
 
     # Exclusions: every content word of one exclusion item appears in one sentence.
     exclusion_triggered = False
@@ -399,12 +315,10 @@ def _assess(context: _Context) -> Assessment:
         words = _content_words(item)
         if not words:
             continue
-        for url, sentence in sentences:
+        for url, sentence in content_sentences:
             if words <= _content_words(sentence):
                 exclusion_triggered = True
-                evidence.append(
-                    _evidence("exclusion", f"Exclusion applies: {item.strip()}.", url, sentence)
-                )
+                evidence.append(_evidence("exclusion", sentence[:300], url, sentence))
                 break
 
     statuses = (industry_match, geography_match, business_match)
@@ -425,7 +339,8 @@ def _assess(context: _Context) -> Assessment:
         company_name=company_name,
         description=description,
         industry=industry,
-        geography=geography[:20],
+        company_locations=locations[:20],
+        markets_served=markets[:20],
         industry_match=industry_match,
         geography_match=geography_match,
         business_match=business_match,
@@ -434,6 +349,67 @@ def _assess(context: _Context) -> Assessment:
         rationale=rationale,
         evidence=evidence[:30],
     )
+
+
+def _judge(item: dict[str, Any]) -> dict[str, Any]:
+    """Mock verifier: keyword rules standing in for a semantic check."""
+    field = item.get("field")
+    value = str(item.get("value") or "")
+    claim = str(item.get("claim") or "")
+    quotes = [str(q) for q in item.get("quotes") or []]
+    joined = " ".join(quotes)
+
+    def verdict(result: str, reason: str) -> dict[str, Any]:
+        return {"id": item.get("id"), "verdict": result, "reason": f"[mock] {reason}"[:300]}
+
+    if field == "company_location":
+        own = [p for q in quotes for s in _sentences(q) for p in _own_locations(s)]
+        if any(_same_place(value, p) for p in own):
+            return verdict("supported", f"the quote states an own site in {value}")
+        served = [p for q in quotes for s in _sentences(q) for p in _markets(s)]
+        if any(_same_place(value, p) for p in served):
+            return verdict("not_supported", f"serving customers in {value} is not a location")
+        return verdict("not_supported", f"no statement that the company is located in {value}")
+    if field == "market_served":
+        served = [p for q in quotes for s in _sentences(q) for p in _markets(s)]
+        if any(_same_place(value, p) for p in served):
+            return verdict("supported", f"the quote says the company serves {value}")
+        return verdict("not_supported", f"no statement about customers in {value}")
+    if field == "company_name":
+        found = value.lower() in joined.lower()
+        return verdict(
+            "supported" if found else "not_supported",
+            "name in quote" if found else "name not in quote",
+        )
+    share = {"industry": 0.5, "description": 0.4}.get(str(field), 0.5)
+    words = _content_words(value if field in ("industry", "description") else claim)
+    hits = words & _content_words(joined)
+    if words and len(hits) >= max(1, math.ceil(share * len(words))):
+        return verdict("supported", f"{len(hits)} of {len(words)} key words found in the quotes")
+    return verdict("not_supported", f"only {len(hits)} of {len(words)} key words found")
+
+
+def _own_locations(sentence: str) -> list[str]:
+    places: list[str] = []
+    for match in _OWN_LOCATION_RE.finditer(sentence):
+        before = sentence[max(0, match.start() - 30) : match.start()]
+        # "Our customers are located in X" is about customers, not about the company.
+        if _MARKET_WORD_RE.search(before) or _MARKET_WORD_RE.search(match.group(0)):
+            continue
+        places.extend(_split_places(match.group(1)))
+    return places
+
+
+def _markets(sentence: str) -> list[str]:
+    return [p for match in _MARKET_RE.finditer(sentence) for p in _split_places(match.group(1))]
+
+
+def _split_places(text: str) -> list[str]:
+    return [p.strip() for p in re.split(r",\s*(?:and\s+)?|\s+and\s+", text) if p.strip()]
+
+
+def _same_place(a: str, b: str) -> bool:
+    return bool(a) and a.strip().lower() == b.strip().lower()
 
 
 def _evidence(supports: str, claim: str, url: str, quote: str) -> EvidenceItem:
@@ -464,7 +440,7 @@ def _content_words(text: str) -> set[str]:
 
 def _allowed_places(geography: str) -> set[str]:
     wanted = geography.lower()
-    allowed = {part.strip() for part in re.split(r"[,;/]|\band\b|\bor\b", wanted) if part.strip()}
+    allowed = {p.strip() for p in re.split(r"[,;/]|\band\b|\bor\b", wanted) if p.strip()}
     for region, members in _REGIONS.items():
         if re.search(rf"\b{re.escape(region)}", wanted):
             allowed |= members

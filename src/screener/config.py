@@ -21,10 +21,12 @@ class Settings(BaseSettings):
     # "mock" (default) never calls a paid API; "anthropic" uses the real Claude API.
     llm_backend: Literal["mock", "anthropic"] = "mock"
     anthropic_api_key: SecretStr | None = None
+    # One model for the agent and the evidence verifier (simpler to reproduce and cost).
     llm_model: str = "claude-sonnet-5-5"
     # Anthropic's guidance for extraction/classification work is to start at "low".
     llm_effort: Literal["low", "medium", "high"] = "low"
     llm_max_output_tokens: int = Field(default=8_000, ge=1_000, le=32_000)
+    verifier_max_output_tokens: int = Field(default=4_000, ge=500, le=16_000)
     llm_request_timeout_s: float = Field(default=120.0, gt=0)
     # Retries of temporary API errors, done by the app (not the SDK) so each one is counted.
     llm_max_retries: int = Field(default=2, ge=0, le=5)
@@ -32,6 +34,7 @@ class Settings(BaseSettings):
     # --- Agent limits, per company ---------------------------------------------------
     max_tool_calls: int = Field(default=3, ge=0, le=10)
     max_llm_calls: int = Field(default=4, ge=1, le=10)  # agent turns
+    max_claims_to_verify: int = Field(default=25, ge=1, le=60)  # in one verifier request
 
     # --- Budgets: every API attempt counts (agent turns, verifier, retries) -----------
     max_llm_requests_per_company: int = Field(default=8, ge=2, le=40)

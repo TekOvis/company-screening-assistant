@@ -28,7 +28,9 @@ _NON_CONTENT_TAGS = [
 _HIDDEN_STYLE_RE = re.compile(r"display\s*:\s*none|visibility\s*:\s*hidden", re.IGNORECASE)
 _WHITESPACE_RE = re.compile(r"\s+")
 # Our prompt uses these tags as delimiters; neutralize them inside untrusted page text.
-_DELIMITER_RE = re.compile(r"<(/?)(page|site_links|screening_criteria)", re.IGNORECASE)
+_DELIMITER_RE = re.compile(
+    r"<(/?)(page|site_links|screening_criteria|claims_to_check)", re.IGNORECASE
+)
 _SKIP_LINK_PREFIXES = ("mailto:", "tel:", "javascript:", "data:", "#")
 _BINARY_EXTENSIONS = (
     ".pdf",
