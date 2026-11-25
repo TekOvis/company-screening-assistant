@@ -3,10 +3,12 @@ machine, and each test controls DNS answers through a fake resolver. Retries use
 sleep, so the tests never actually wait."""
 
 import socket
+import threading
 
 import httpx
 import pytest
 
+from screener import fetcher as fetcher_module
 from screener.fetcher import FetchError, HttpFetcher
 from screener.netguard import BlockedAddressError, UnsafeURLError
 
@@ -61,6 +63,27 @@ async def test_connects_to_checked_ip_with_original_host_and_sni():
     assert page.url == "https://acme.com/"
     assert "headquartered in Stuttgart" in page.text
     assert [link.path for link in page.links] == ["/about", "/contact"]
+
+
+@pytest.mark.anyio
+async def test_pages_are_parsed_in_the_parser_thread_not_in_the_event_loop(monkeypatch):
+    """Parsing a 1 MB page takes seconds of CPU on the small server. Done in the event loop,
+    it delayed /healthz past the health check's 5 s timeout during a large job."""
+    threads = []
+    real_build_page = fetcher_module.build_page
+
+    def recording_build_page(**kwargs):
+        threads.append(threading.current_thread())
+        return real_build_page(**kwargs)
+
+    monkeypatch.setattr(fetcher_module, "build_page", recording_build_page)
+    async with _fetcher(lambda request: _html(), {"acme.com": [PUBLIC_IP]}) as fetcher:
+        page = await fetcher.fetch("acme.com")
+
+    assert "headquartered in Stuttgart" in page.text
+    assert len(threads) == 1
+    assert threads[0] is not threading.current_thread()  # not the event loop's thread
+    assert threads[0].name.startswith("html-parse")
 
 
 @pytest.mark.anyio

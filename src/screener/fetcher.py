@@ -16,8 +16,10 @@ from __future__ import annotations
 import asyncio
 import random
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Protocol
+from functools import partial
+from typing import Any, Protocol
 from urllib.parse import urljoin
 
 import httpx
@@ -123,6 +125,20 @@ def build_page(
         links=extracted.links,
         truncated=extracted.truncated,
     )
+
+
+# Parsing a large page takes a second or more of CPU. In this thread it does not block the
+# event loop, so the app keeps answering other requests and the health check meanwhile.
+# One thread only: parsing is CPU-bound Python, so more threads would not be faster (the
+# GIL), but would hold more pages in memory at once and slow the event loop down more.
+_PARSER = ThreadPoolExecutor(max_workers=1, thread_name_prefix="html-parse")
+
+
+async def build_page_in_thread(**kwargs: Any) -> FetchedPage:
+    """build_page() in the parser thread. If the caller is cancelled (a time limit), the
+    thread still finishes the page, and the result is dropped."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_PARSER, partial(build_page, **kwargs))
 
 
 def parse_content_type(value: str) -> tuple[str, str | None]:
@@ -251,7 +267,7 @@ class HttpFetcher:
                 body = await self._read_limited(response)
             finally:
                 await response.aclose()
-            return build_page(
+            return await build_page_in_thread(
                 requested_url=requested_url,
                 final_url=target.url,
                 status_code=response.status_code,
