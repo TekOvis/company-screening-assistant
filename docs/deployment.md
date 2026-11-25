@@ -5,6 +5,9 @@
 check every minute. An access token is required. See
 [Activation record](#activation-record-2026-11-25) and
 [Update: health check](#update-health-check-2026-11-25-2112-utc).
+- **Local, not deployed:** HTML parsing moved from the parser thread to a child process
+  that a time limit can stop. See
+  [Parsing in a child process](#parsing-in-a-child-process-local-not-deployed).
 - It runs as a **mock-mode** service on a small VPS shared with another service, without
   Docker. See [Shared VPS without Docker](#shared-vps-without-docker-planned-first-demo).
 - The Dockerfile route below is kept for other hosts. The image has not been built yet,
@@ -94,7 +97,8 @@ the largest job with 1 MB pages.
 
 With parsing in the event loop, the health check would have restarted the service in
 the middle of an ordinary large job. On the server (slower CPU, `CPUQuota=50%`) the delays
-would be longer still. Parsing now runs in one dedicated thread:
+would be longer still. In the deployed release `7804bc4373aa`, parsing runs in one
+dedicated thread (replaced locally by a child process, see the next section):
 - One thread, not more: parsing is CPU-bound Python, so more threads are not faster (the
   GIL) but hold more pages in memory and slow the event loop down more.
 - If a time limit fires, a page waiting for the parser is dropped. A page being parsed is
@@ -103,6 +107,59 @@ would be longer still. Parsing now runs in one dedicated thread:
 **Not measured on the server.** The server is slower and limited to 50% of a core. If its
 delays were a few times the local maximum of 0.77 s, they would still stay below 5 s.
 That is an estimate, not a measurement.
+
+### Parsing in a child process (local, not deployed)
+
+**The problem with the parser thread.** A thread cannot be stopped. If one page never
+finished parsing (a pathological page or a parser bug), the time limit ended the wait but
+not the parse. The only parser thread stayed busy, and every later page waited behind it
+until its own time limit. The health check did not see it: `/healthz` kept answering.
+Starting a new thread per timeout would leave the stuck ones running and pile them up.
+
+**Reproduced first.** `tests/test_stuck_parser.py`, through the JSON API with the real
+`HttpFetcher` and a mocked network:
+1. The first screening's page never finishes parsing. The screening ends at a time limit,
+   in one variant the screening's (`RUN_TIMEOUT_S`), in the other the page's
+   (`FETCH_TOTAL_TIMEOUT_S`).
+2. Then a screening of a normal page arrives. It must come back `ok` with its page
+   fetched and assessed, not only get a free slot.
+
+With the parser thread, both variants failed at step 2. With the screening's limit, the
+second screening hit its own time limit. With the page's limit, its page ended in
+`fetch_error (timeout)`.
+
+**The change** ([`page_parser.py`](../src/screener/page_parser.py)):
+- Downloaded pages are parsed in **one child process**, one page at a time, as before.
+- When the caller stops waiting (the page's or the screening's time limit), the child is
+  **killed**. The next page starts a fresh one (about 0.3 s in the local tests). There is
+  no new thread or process per timeout, and nothing stuck keeps running.
+- The event loop never waits on the child: it checks the pipe every 1–20 ms.
+- A page that makes the parser raise is a `parse_error` for that page; the child keeps
+  working. A crashed child is replaced on the next page.
+- Saved pages (examples, tests) are small and are still parsed directly.
+
+With the change, both variants pass: the stuck child is gone, and the second screening is
+processed by a new one. Further tests cover a parse killed by a time limit while the event
+loop keeps running, a page that raises, and a crashed child.
+
+**Measured locally, the same day, one run after another** (Windows, largest job, 1 MB
+pages, two companies in parallel; two runs each):
+
+| Parsing | `/healthz` median | max | checks over 5 s | Peak memory | CPU time | Wall time |
+|---|---|---|---|---|---|---|
+| parser thread (deployed) | 0.32 / 0.35 s | 0.50 / 0.45 s | 0 | 143 MB | 32.4 / 26.6 s | 32.8 / 26.9 s |
+| child process (local) | 0.00 / 0.00 s | 0.24 / 0.23 s | 0 | at most 172 / 171 MB | 25.3 / 25.2 s | 25.2 / 25.2 s |
+
+- **Memory:** app 112–114 MB plus parser 58 MB. That is the sum of two peaks that need not
+  coincide, so it is an upper bound. It is about 30 MB more than with the thread.
+- **CPU:** both use about the same. The thread's runs varied by 6 s, so the difference is
+  not a measured gain.
+- **On Linux,** starting the child also starts multiprocessing's small resource tracker
+  process. It does not exist on Windows and is not in these numbers.
+
+**Not measured on the server.** Neither the memory of the app, the parser and the tracker
+together in the service's cgroup, nor the `/healthz` times there. The estimate is under
+200 MB against `MemoryMax=300M`. This must be measured after deployment.
 
 ### Load check on the server (2026-11-25, 19:12–19:21 UTC)
 
@@ -171,10 +228,12 @@ These bounds do not cover a blocked event loop. Then the time limit cannot fire,
 The [health check](#health-check) covers that case.
 
 What the health check does **not** cover:
-- **A slow page in the parser thread.** The event loop stays free, so `/healthz` keeps
-  answering and nothing is restarted. Later pages wait for the parser, and screenings
-  end through the fetch and run time limits with errors rather than hang. Pages are
-  capped at 1 MB, which makes this less likely, but it is not excluded.
+- **A stuck page in the parser thread** (deployed release). The event loop stays free, so
+  `/healthz` keeps answering and nothing is restarted. Later pages wait behind the stuck
+  one, and screenings end through the fetch and run time limits with errors until the
+  service restarts. Pages are capped at 1 MB, which makes this less likely, but it is not
+  excluded. The local change kills a stuck parse at the time limit instead (see
+  [Parsing in a child process](#parsing-in-a-child-process-local-not-deployed)).
 - **Wrong answers.** `/healthz` only shows that the app answers, not that screenings
   work.
 

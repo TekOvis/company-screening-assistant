@@ -49,6 +49,7 @@ never switches to another one on its own.
 | `fetcher.py` | `PageFetcher` interface and `HttpFetcher`: pinned connections, redirects, retries, size and time limits |
 | `fixtures.py` | `FixtureFetcher`: saved pages from memory (tests, evaluation) |
 | `html_text.py` | visible text, title, meta description, same-site links, delimiter neutralisation |
+| `page_parser.py` | parses downloaded pages in one child process; a time limit kills a stuck parse, and the next page starts a fresh process |
 | `prompts.py` | system prompts and how untrusted text is embedded |
 | `agent.py` | the agent loop: structured output, tool calls, every stop reason handled |
 | `tools.py` | `fetch_company_page`: definition, argument validation, execution |

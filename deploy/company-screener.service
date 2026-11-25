@@ -35,7 +35,9 @@ Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15
 
-# Resources. Peak for the largest job on the server: 129 MB (load check, 2026-11-25).
+# Resources. Peak for the largest job on the server: 129 MB (load check, 2026-11-25, with
+# parsing in the app process). Pages are now parsed in a child process in the same
+# cgroup: locally that added about 30 MB (at most 172 MB in all); not yet measured here.
 # No MemoryHigh on purpose: without swap, the server check showed a process above it
 # being throttled into a hang (263 MB, never reaching MemoryMax). With MemoryMax alone the
 # kernel kills only this service, and Restart=on-failure brings it back.
