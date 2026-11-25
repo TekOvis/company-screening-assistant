@@ -33,7 +33,7 @@
     <span class="hint">· {{ usage.llm_requests }} API requests ({{ usage.failed_requests }} failed),
       {{ usage.input_tokens }} input / {{ usage.output_tokens }} output tokens
       {% if backend == "mock" %}(mock estimates, nothing billed)
-      {% elif backend == "claude_code" %}(Claude subscription: counts toward usage limits, no per-token charge)
+      {% elif backend == "claude_code" %}(authorization via Claude subscription; actual billing is not shown here)
       {% else %}(Anthropic API: billed per token){% endif %}</span>
   </p>
   <p class="hint">Facts are shown only when a verbatim quote from a fetched page supports them

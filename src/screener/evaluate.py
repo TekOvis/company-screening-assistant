@@ -6,8 +6,9 @@
 
 mock         The whole application with the deterministic stand-in client. It shows that
              the pipeline works; it says nothing about the quality of a model.
-claude-code  The real model through the local Claude Code login (Claude subscription):
-             usage counts against the subscription limits, no per-token charge.
+claude-code  The real model through the local Claude Code login (authorization via the
+             Claude subscription). The API-equivalent figure is for reference only;
+             actual billing is not confirmed by the report.
 api          The real model through the Anthropic API, billed per token.
 
 Both real-model modes ("live" runs) still use the saved synthetic pages, never the
@@ -58,11 +59,16 @@ _SET_NOTE = (
     "The numbers describe this small synthetic set of invented companies only; they are not "
     "evidence of accuracy on real company websites."
 )
+CLAUDE_CODE_BILLING = (
+    "Authorization via Claude subscription; the API-equivalent is given for reference only. "
+    "Actual billing is not confirmed by this report."
+)
 NOTICES = {
     "mock": MOCK_WARNING,
-    "claude-code": "CLAUDE CODE MODE: the real model through your Claude Code login (Claude "
-    "subscription). Usage counts against your subscription limits; there is no per-token "
-    "charge. " + _SET_NOTE,
+    "claude-code": "CLAUDE CODE MODE: the real model through your Claude Code login. "
+    + CLAUDE_CODE_BILLING
+    + " "
+    + _SET_NOTE,
     "api": "ANTHROPIC API MODE: the real model through the API, billed per token. " + _SET_NOTE,
 }
 MODE_BACKENDS = {"mock": "mock", "claude-code": "claude_code", "api": "anthropic"}
@@ -73,7 +79,7 @@ MODE_TITLES = {
 }
 BILLING = {
     "mock": "none (no model)",
-    "claude-code": "Claude subscription: usage limits, no per-token charge",
+    "claude-code": CLAUDE_CODE_BILLING,
     "api": "Anthropic API: billed per token",
 }
 LIMIT_SETTINGS = (
@@ -164,6 +170,69 @@ def _ratio(part: int, whole: int) -> float | None:
     return part / whole if whole else None
 
 
+def fact_check_summary(rows: list[tuple[str, dict[str, Any]]]) -> dict[str, Any]:
+    """Facts before and after the evidence checks, from results as saved in results.jsonl.
+
+    "Before": facts in the model's own answer that the checks did not confirm, so they
+    are missing from the final answer. "After": facts in the final answer without a
+    supported evidence item behind them, which should be none. Only cases whose checks
+    ran (status ok) count. No model is called.
+    """
+    checked = [(cid, r) for cid, r in rows if r.get("status") == "ok" and r.get("raw_assessment")]
+    not_confirmed: list[dict[str, str]] = []
+    unsupported_final: list[dict[str, str]] = []
+    reported = final_total = 0
+    for case_id, result in checked:
+        model_answer = result["raw_assessment"]
+        reported += len(metrics.fact_list(model_answer))
+        final_total += len(metrics.fact_list(result))
+        for field, value in metrics.unconfirmed_facts(model_answer, result):
+            not_confirmed.append({"case": case_id, "field": field, "value": value})
+        for field, value in metrics.facts_without_support(result, result.get("evidence") or []):
+            unsupported_final.append({"case": case_id, "field": field, "value": value})
+    return {
+        "cases_checked": len(checked),
+        "cases_without_checks": len(rows) - len(checked),
+        "facts_in_model_answers": reported,
+        "not_confirmed_by_checks": len(not_confirmed),
+        "not_confirmed_by_field": dict(Counter(item["field"] for item in not_confirmed)),
+        "not_confirmed_list": not_confirmed,
+        "facts_in_final_answers": final_total,
+        "final_without_supported_evidence": len(unsupported_final),
+        "final_without_supported_evidence_list": unsupported_final,
+    }
+
+
+def code_version(root: Path = PROJECT_ROOT) -> dict[str, str | None]:
+    """The commit checked out (read from .git without running git) and a fingerprint of
+    the application source, which also changes with uncommitted edits."""
+    digest = hashlib.sha256()
+    package = root / "src" / "screener"
+    for path in sorted(
+        p for p in package.rglob("*") if p.is_file() and "__pycache__" not in p.parts
+    ):
+        digest.update(path.relative_to(package).as_posix().encode() + b"\0")
+        digest.update(path.read_bytes() + b"\0")
+    return {"git_commit": _git_head(root / ".git"), "source_sha256": digest.hexdigest()}
+
+
+def _git_head(git_dir: Path) -> str | None:
+    try:
+        head = (git_dir / "HEAD").read_text(encoding="utf-8").strip()
+        if not head.startswith("ref: "):
+            return head or None
+        ref = head.removeprefix("ref: ")
+        ref_file = git_dir / ref
+        if ref_file.is_file():
+            return ref_file.read_text(encoding="utf-8").strip() or None
+        for line in (git_dir / "packed-refs").read_text(encoding="utf-8").splitlines():
+            if line.endswith(" " + ref):
+                return line.split(" ", 1)[0]
+    except OSError:
+        return None
+    return None
+
+
 def _cost_block(mode: str, usage: Usage, settings: Settings) -> dict[str, Any]:
     """What a run cost, without ever presenting an estimate as a charge."""
     if mode == "mock":
@@ -175,12 +244,13 @@ def _cost_block(mode: str, usage: Usage, settings: Settings) -> dict[str, Any]:
     estimate = round(cost_usd(usage, tariff), 4) if tariff else None
     if mode == "claude-code":
         return {
-            "usd": None,  # no per-token charge: usage counts against the subscription
-            "charged": "no per-token charge (Claude subscription usage limits apply)",
+            "usd": None,  # the actual billing is unknown to this tool
+            "actual_billing": "not confirmed by this report (authorization via Claude "
+            "subscription; whether paid extra usage was enabled is not checked)",
             "api_equivalent_usd": estimate,
             "source": TARIFFS_SOURCE,
             "note": "what the reported tokens would cost on the API at the listed tariffs; "
-            "an estimate for comparison, not an actual charge",
+            "for reference only",
         }
     if tariff is None:
         return {"usd": None, "note": f"no tariff listed for {settings.llm_model}"}
@@ -236,6 +306,7 @@ def build_report(
         "billing": BILLING[mode],
         "notice": NOTICES[mode],
         "app_version": __version__,
+        "code": code_version(),
         "started_at": started.isoformat(timespec="seconds"),
         "wall_time_s": round(wall_time_s, 2),
         "model": model_label(settings),
@@ -267,6 +338,9 @@ def build_report(
             "verbatim_rate": _ratio(verbatim, evidence_total),
             "supported_rate_of_verbatim": _ratio(checks["supported"], verbatim),
         },
+        "fact_checks": fact_check_summary(
+            [(o.case.id, o.result.model_dump(mode="json")) for o in outcomes]
+        ),
         "facts": {
             "labelled_cases": len(labelled),
             "name_correct": [sum(names), len(names)],
@@ -315,6 +389,17 @@ def _pct(value: float | None) -> str:
     return "n/a" if value is None else f"{value:.0%}"
 
 
+def fact_check_lines(summary: dict[str, Any]) -> list[str]:
+    by_field = ", ".join(f"{k} {v}" for k, v in sorted(summary["not_confirmed_by_field"].items()))
+    return [
+        f"- Facts in the model's answers (cases whose checks ran: {summary['cases_checked']}): "
+        f"{summary['facts_in_model_answers']}; not confirmed by the checks and removed: "
+        f"{summary['not_confirmed_by_checks']}" + (f" ({by_field})" if by_field else ""),
+        f"- Facts in the final answers: {summary['facts_in_final_answers']}; without a supported "
+        f"evidence item: {summary['final_without_supported_evidence']}",
+    ]
+
+
 def render_markdown(report: dict[str, Any], outcomes: list[CaseOutcome]) -> str:
     final = report["classification"]["final"]
     before = report["classification"]["model_before_checks"]
@@ -329,6 +414,8 @@ def render_markdown(report: dict[str, Any], outcomes: list[CaseOutcome]) -> str:
         f"- Billing: {report['billing']}",
         f"- Started {report['started_at']}, wall time {report['wall_time_s']} s, "
         f"app version {report['app_version']}",
+        f"- Code: commit `{(report['code']['git_commit'] or 'unknown')[:12]}`, source sha256 "
+        f"`{report['code']['source_sha256'][:12]}`",
         f"- Model: {report['model']}"
         + (f", effort {report['effort']}" if report["effort"] else ""),
         f"- Cases: {n} synthetic (`{report['dataset']['path']}`, sha256 "
@@ -387,6 +474,7 @@ def render_markdown(report: dict[str, Any], outcomes: list[CaseOutcome]) -> str:
         f"- Invented or trap locations before checks: "
         f"{', '.join(facts['invented_location_before_checks']) or 'none'}; "
         f"after checks: {', '.join(facts['invented_location_after_checks']) or 'none'}",
+        *fact_check_lines(report["fact_checks"]),
         f"- Tool calls: {report['tools']['tool_calls_total']} in "
         f"{report['tools']['cases_with_tool_calls']} cases",
         "",
@@ -401,12 +489,12 @@ def render_markdown(report: dict[str, Any], outcomes: list[CaseOutcome]) -> str:
     ]
     cost = report["cost"]
     source = f" Tariffs: {cost['source']}." if "source" in cost else ""
-    if "charged" in cost:  # Claude Code: never present the estimate as a charge
+    if "actual_billing" in cost:  # Claude Code: the estimate is never presented as billing
         estimate = cost.get("api_equivalent_usd")
         equivalent = f"${estimate:.4f}" if estimate is not None else "not computed"
         lines.append(
-            f"- Cost: {cost['charged']}. API-equivalent estimate: {equivalent} ({cost['note']})."
-            f"{source}"
+            f"- Actual billing: {cost['actual_billing']}. API-equivalent: {equivalent} "
+            f"({cost['note']}).{source}"
         )
     elif cost.get("usd") is None:
         lines.append(f"- Cost: not computed ({cost['note']})")
@@ -466,14 +554,19 @@ def print_claude_code_plan(cases: list[EvalCase], settings: Settings) -> None:
         f"{settings.llm_effort}, through your Claude subscription login."
     )
     print(
-        "No per-token API charge; every case uses part of your subscription's usage limits. "
+        "Authorization via your Claude subscription; every case uses part of its usage "
+        "limits. This tool cannot check whether paid extra usage is enabled on the account: "
+        "check that yourself before a full run. "
         f"Per case: at most {settings.claude_code_max_turns} Claude Code turns for the agent "
         f"plus one evidence check, {settings.max_tool_calls} tool calls, "
         f"{settings.claude_code_timeout_s:.0f} s per Claude Code run; "
         f"{settings.claude_code_concurrency} Claude Code process(es) at a time."
     )
     print(_caps_line(settings, len(cases), "model requests"))
-    print("If the subscription limit is reached, the run stops. Nothing switches to the API.")
+    print(
+        "The run stops when Claude Code reports a usage limit or paid extra usage; the request "
+        "after which that report arrives may already have counted. Nothing switches to the API."
+    )
 
 
 def print_spending_plan(cases: list[EvalCase], settings: Settings) -> None:
@@ -496,16 +589,39 @@ def print_spending_plan(cases: list[EvalCase], settings: Settings) -> None:
         print(f"Tariffs: {TARIFFS_SOURCE}")
 
 
+def rescore(run_dir: Path) -> dict[str, Any]:
+    """Recompute the fact metrics of a saved run from its results.jsonl. No model calls;
+    the run's own files are not changed."""
+    rows = []
+    with (run_dir / "results.jsonl").open(encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                item = json.loads(line)
+                rows.append((item["id"], item["result"]))
+    return {
+        "source": "results.jsonl",
+        "computed_with": code_version(),
+        "fact_checks": fact_check_summary(rows),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m screener.evaluate", description="Run the synthetic evaluation set."
     )
-    parser.add_argument(
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument(
         "--mode",
         choices=tuple(MODE_BACKENDS),
-        required=True,
         help="mock: free pipeline test; claude-code: real model via your Claude subscription; "
         "api: real model via the Anthropic API (costs money)",
+    )
+    action.add_argument(
+        "--rescore",
+        type=Path,
+        metavar="RUN_DIR",
+        help="recompute fact metrics of a saved run from its results.jsonl (no model calls); "
+        "writes RUN_DIR/rescored.json",
     )
     parser.add_argument("--only", nargs="+", metavar="CASE_ID", help="run only these cases")
     parser.add_argument("--limit", type=int, help="run only the first N cases")
@@ -515,6 +631,17 @@ def main(argv: list[str] | None = None) -> int:
         "--yes", action="store_true", help="confirm a real-model run (quota or money)"
     )
     args = parser.parse_args(argv)
+
+    if args.rescore:
+        if not (args.rescore / "results.jsonl").is_file():
+            print(f"No results.jsonl in {args.rescore}")
+            return 1
+        rescored = rescore(args.rescore)
+        (args.rescore / "rescored.json").write_text(
+            json.dumps(rescored, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        print("\n".join(fact_check_lines(rescored["fact_checks"])))
+        return 0
 
     cases = load_cases(args.cases)
     if args.only:

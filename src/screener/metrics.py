@@ -8,7 +8,9 @@ label, but it is not a false positive for any label.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+import unicodedata
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 LABELS: tuple[str, ...] = ("fit", "non_fit", "insufficient_information")
 NO_LABEL = "no_label"
@@ -112,3 +114,73 @@ def markets_found(expected_groups: Sequence[Sequence[str]], predicted: Sequence[
         any(_same(normalize_place(alt), p) for alt in group for p in places)
         for group in expected_groups
     )
+
+
+# --- Facts before and after the evidence checks ---------------------------------------
+#
+# These work on plain dicts, so they can be computed from saved results.jsonl files
+# without calling a model again.
+
+FACT_FIELDS: tuple[str, ...] = (
+    "company_name",
+    "description",
+    "industry",
+    "company_locations",
+    "markets_served",
+)
+# Evidence categories that can back each fact (the description: see verify.build_claims).
+_FACT_EVIDENCE = {
+    "company_name": ("company_name",),
+    "description": ("description", "business"),
+    "industry": ("industry",),
+    "company_locations": ("company_location",),
+    "markets_served": ("market_served",),
+}
+_VALUE_IN_QUOTE = ("company_name", "company_locations", "markets_served")
+
+
+def _key(value: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
+
+
+def fact_list(answer: Mapping[str, Any]) -> list[tuple[str, str]]:
+    """The extracted facts of one answer: the name, the description, the industry, each own
+    location and each market served. Criterion statuses and the label are not counted."""
+    facts: list[tuple[str, str]] = []
+    for field in FACT_FIELDS:
+        value = answer.get(field)
+        values = value if isinstance(value, list) else [value]
+        seen: set[str] = set()
+        for item in values:
+            if isinstance(item, str) and item.strip() and _key(item) not in seen:
+                seen.add(_key(item))
+                facts.append((field, item.strip()))
+    return facts
+
+
+def unconfirmed_facts(
+    model_answer: Mapping[str, Any], final_answer: Mapping[str, Any]
+) -> list[tuple[str, str]]:
+    """Facts the model reported that the evidence checks did not confirm, so they are
+    missing from the final answer."""
+    kept = {(field, _key(value)) for field, value in fact_list(final_answer)}
+    return [(f, v) for f, v in fact_list(model_answer) if (f, _key(v)) not in kept]
+
+
+def facts_without_support(
+    answer: Mapping[str, Any], evidence: Sequence[Mapping[str, Any]]
+) -> list[tuple[str, str]]:
+    """Facts with no evidence item marked "supported" behind them: the item must be of a
+    matching category and, for names and places, contain the value. For a final answer
+    this should be empty; the metric checks that instead of assuming it."""
+    missing = []
+    for field, value in fact_list(answer):
+        backed = any(
+            item.get("check") == "supported"
+            and item.get("supports") in _FACT_EVIDENCE[field]
+            and (field not in _VALUE_IN_QUOTE or _key(value) in _key(str(item.get("quote", ""))))
+            for item in evidence
+        )
+        if not backed:
+            missing.append((field, value))
+    return missing

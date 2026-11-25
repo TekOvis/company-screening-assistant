@@ -28,6 +28,17 @@ def test_mock_evaluation_runs_end_to_end(monkeypatch, tmp_path):
     assert set(final["confusion_matrix"]) == set(metrics.LABELS)
     assert sum(sum(row.values()) for row in final["confusion_matrix"].values()) == 20
 
+    assert len(report["code"]["source_sha256"]) == 64
+    facts = report["fact_checks"]
+    assert facts["cases_checked"] == 20
+    assert facts["final_without_supported_evidence"] == 0
+    assert facts["facts_in_final_answers"] <= facts["facts_in_model_answers"]
+
+    # Rescoring the saved results gives the same fact metrics, without a model.
+    assert evaluate.main(["--rescore", str(tmp_path)]) == 0
+    rescored = json.loads((tmp_path / "rescored.json").read_text(encoding="utf-8"))
+    assert rescored["fact_checks"] == facts
+
     lines = (tmp_path / "results.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(lines) == 20
     redirect_case = json.loads(lines[19])
@@ -71,6 +82,24 @@ def test_api_branch_with_yes_and_a_stand_in_client(monkeypatch, tmp_path):
     assert "billed per token" in report["billing"] and "synthetic" in report["notice"]
     assert report["model"] == "claude-sonnet-5-5 via Anthropic API"
     assert report["cost"]["usd"] > 0  # computed from the reported tokens at listed tariffs
+
+
+def test_the_commit_is_read_from_git_files(tmp_path):
+    git = tmp_path / ".git"
+    (git / "refs" / "heads").mkdir(parents=True)
+    (git / "HEAD").write_text("ref: refs/heads/feature\n", encoding="utf-8")
+    (git / "refs" / "heads" / "feature").write_text("abc123\n", encoding="utf-8")
+    assert evaluate._git_head(git) == "abc123"
+
+    (git / "refs" / "heads" / "feature").unlink()
+    (git / "packed-refs").write_text("# pack-refs\ndef456 refs/heads/feature\n", encoding="utf-8")
+    assert evaluate._git_head(git) == "def456"
+    assert evaluate._git_head(tmp_path / "missing") is None
+
+
+def test_rescore_needs_saved_results(tmp_path, capsys):
+    assert evaluate.main(["--rescore", str(tmp_path)]) == 1
+    assert "No results.jsonl" in capsys.readouterr().out
 
 
 def test_unknown_case_ids_are_rejected(capsys):

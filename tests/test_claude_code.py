@@ -267,7 +267,10 @@ def test_eval_report_never_presents_the_estimate_as_a_charge(monkeypatch, tmp_pa
     report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
     assert report["mode"] == "claude-code" and report["backend"] == "claude_code"
     assert report["model"] == "claude-sonnet-5-5 via Claude Code (subscription)"
-    assert report["cost"]["usd"] is None  # no per-token charge
+    assert report["cost"]["usd"] is None  # actual billing is unknown to the tool
     assert report["cost"]["api_equivalent_usd"] > 0
+    assert report["billing"] == evaluate.CLAUDE_CODE_BILLING
     markdown = (tmp_path / "report.md").read_text(encoding="utf-8")
-    assert "no per-token charge" in markdown and "not an actual charge" in markdown
+    assert "Actual billing is not confirmed by this report" in markdown
+    assert "for reference only" in markdown
+    assert "no per-token charge" not in markdown and "not an actual charge" not in markdown

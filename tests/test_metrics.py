@@ -79,3 +79,63 @@ def test_cost_uses_every_token_type():
     )
     tariff = Tariff(input=2.0, output=10.0, cache_write=2.5, cache_read=0.1)
     assert cost_usd(usage, tariff) == pytest.approx(2.0 + 1.0 + 0.025 + 0.02)
+
+
+# --- Facts before and after the evidence checks ---------------------------------------
+
+MODEL_ANSWER = {
+    "company_name": "Nordwerk Armaturen",
+    "description": "Makes ball valves.",
+    "industry": None,
+    "company_locations": ["Kassel", "Germany", "kassel "],  # a repeat counts once
+    "markets_served": ["Japan"],
+}
+FINAL_ANSWER = {
+    "company_name": "Nordwerk Armaturen",
+    "description": None,
+    "industry": None,
+    "company_locations": ["Kassel", "Germany"],
+    "markets_served": [],
+}
+
+
+def _item(supports, quote, check="supported"):
+    return {"supports": supports, "quote": quote, "check": check}
+
+
+def test_fact_list_counts_each_value_once():
+    assert metrics.fact_list(MODEL_ANSWER) == [
+        ("company_name", "Nordwerk Armaturen"),
+        ("description", "Makes ball valves."),
+        ("company_locations", "Kassel"),
+        ("company_locations", "Germany"),
+        ("markets_served", "Japan"),
+    ]
+
+
+def test_unconfirmed_facts_are_those_missing_after_the_checks():
+    assert metrics.unconfirmed_facts(MODEL_ANSWER, FINAL_ANSWER) == [
+        ("description", "Makes ball valves."),
+        ("markets_served", "Japan"),
+    ]
+
+
+def test_final_facts_need_a_supported_item_of_a_matching_category():
+    evidence = [
+        _item("company_name", "Welcome to Nordwerk Armaturen."),
+        _item("company_location", "Our plant is in Kassel, Germany."),
+    ]
+    assert metrics.facts_without_support(FINAL_ANSWER, evidence) == []
+    # Not supported, wrong category, or the value missing from the quote: not backed.
+    weak = [
+        _item("company_name", "Welcome to Nordwerk Armaturen.", check="unclear"),
+        _item("market_served", "Our plant is in Kassel, Germany."),
+        _item("company_location", "Our plant is in Kassel."),
+    ]
+    assert metrics.facts_without_support(FINAL_ANSWER, weak) == [
+        ("company_name", "Nordwerk Armaturen"),
+        ("company_locations", "Germany"),
+    ]
+    # The description may rest on a supported business quote.
+    described = {"description": "Makes ball valves."}
+    assert metrics.facts_without_support(described, [_item("business", "We make valves.")]) == []

@@ -304,7 +304,8 @@ class ClaudeCodeClient:
                             )
                         elif isinstance(message, RateLimitEvent):
                             info = message.rate_limit_info
-                            # Stop at the limit, also before paid "overage" usage starts.
+                            # Stop at the limit or when paid "overage" is reported. This
+                            # reacts to the report: the turn before it may already count.
                             if info.status == "rejected" or info.rate_limit_type == "overage":
                                 run.rate_limit = info
                                 break
