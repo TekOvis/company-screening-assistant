@@ -81,7 +81,6 @@ LIMIT_SETTINGS = (
     "max_llm_calls",
     "max_llm_requests_per_company",
     "max_tokens_per_company",
-    "max_tokens_per_run",
     "llm_max_output_tokens",
     "verifier_max_output_tokens",
     "llm_max_retries",
@@ -95,9 +94,23 @@ class CaseOutcome:
     result: CompanyResult
 
 
+def eval_run_budget(settings: Settings, case_count: int) -> RunBudget:
+    """Budget for a whole evaluation: the sum of the per-company caps.
+
+    Each case is one independent screening of one company. The web app's per-run caps are
+    sized for one screening of up to max_urls_per_request companies, so they do not fit an
+    evaluation of 20 cases: the first real run shared them and stopped after 14 cases.
+    A run-wide stop (spend limit, subscription quota) still ends the whole evaluation.
+    """
+    return RunBudget(
+        max_tokens=case_count * settings.max_tokens_per_company,
+        max_requests=case_count * settings.max_llm_requests_per_company,
+    )
+
+
 async def run_cases(cases: list[EvalCase], settings: Settings, client: Any) -> list[CaseOutcome]:
     """Run the cases one by one (simple timing, gentle on rate limits)."""
-    run_budget = RunBudget.from_settings(settings)
+    run_budget = eval_run_budget(settings, len(cases))
     outcomes = []
     try:
         for position, case in enumerate(cases):
@@ -228,6 +241,7 @@ def build_report(
         "model": model_label(settings),
         "effort": None if mode == "mock" else settings.llm_effort,
         "limits": {name: getattr(settings, name) for name in LIMIT_SETTINGS},
+        "eval_caps": _eval_caps(settings, len(outcomes)),
         "dataset": {
             "path": dataset_path,
             "cases": len(outcomes),
@@ -432,6 +446,20 @@ def write_outputs(out_dir: Path, report: dict[str, Any], outcomes: list[CaseOutc
             handle.write(json.dumps(line, ensure_ascii=False) + "\n")
 
 
+def _eval_caps(settings: Settings, case_count: int) -> dict[str, int]:
+    budget = eval_run_budget(settings, case_count)
+    return {"max_tokens": budget.max_tokens, "max_requests": budget.max_requests}
+
+
+def _caps_line(settings: Settings, case_count: int, unit: str) -> str:
+    caps = _eval_caps(settings, case_count)
+    return (
+        f"Hard caps for this run: {caps['max_tokens']:,} tokens and {caps['max_requests']} "
+        f"{unit} ({settings.max_tokens_per_company:,} tokens and "
+        f"{settings.max_llm_requests_per_company} {unit} per case)."
+    )
+
+
 def print_claude_code_plan(cases: list[EvalCase], settings: Settings) -> None:
     print(
         f"Claude Code evaluation: {len(cases)} case(s), model {settings.llm_model}, effort "
@@ -444,22 +472,18 @@ def print_claude_code_plan(cases: list[EvalCase], settings: Settings) -> None:
         f"{settings.claude_code_timeout_s:.0f} s per Claude Code run; "
         f"{settings.claude_code_concurrency} Claude Code process(es) at a time."
     )
+    print(_caps_line(settings, len(cases), "model requests"))
     print("If the subscription limit is reached, the run stops. Nothing switches to the API.")
 
 
 def print_spending_plan(cases: list[EvalCase], settings: Settings) -> None:
     n = len(cases)
-    token_cap = min(n * settings.max_tokens_per_company, settings.max_tokens_per_run)
-    request_cap = min(n * settings.max_llm_requests_per_company, settings.max_llm_requests_per_run)
+    token_cap = _eval_caps(settings, n)["max_tokens"]
     print(
         f"Anthropic API evaluation: {n} case(s), model {settings.llm_model}, effort "
         f"{settings.llm_effort}, billed per token."
     )
-    print(
-        f"Hard caps for this run: {token_cap:,} tokens and {request_cap} API requests "
-        f"({settings.max_tokens_per_company:,} tokens and "
-        f"{settings.max_llm_requests_per_company} requests per case)."
-    )
+    print(_caps_line(settings, n, "API requests"))
     tariff = tariff_for(settings.llm_model)
     if tariff is None:
         print(f"No tariff is listed for {settings.llm_model}; the cost cannot be estimated.")

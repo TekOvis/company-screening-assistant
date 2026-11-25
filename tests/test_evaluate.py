@@ -6,10 +6,16 @@ from screener import evaluate, metrics
 from screener.fake_llm import FakeAnthropicClient
 
 
-def test_mock_evaluation_runs_end_to_end(tmp_path):
+def test_mock_evaluation_runs_end_to_end(monkeypatch, tmp_path):
+    # The web app's per-run cap must not apply: each case is its own screening.
+    # (The first real run shared a 60-request run cap and stopped after 14 cases.)
+    monkeypatch.setenv("MAX_LLM_REQUESTS_PER_RUN", "10")
     assert evaluate.main(["--mode", "mock", "--out", str(tmp_path)]) == 0
 
     report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert "budget_exceeded" not in report["statuses"]
+    per_case = report["limits"]["max_llm_requests_per_company"]
+    assert report["eval_caps"]["max_requests"] == 20 * per_case
     assert report["mode"] == "mock" and "MOCK MODE" in report["notice"]
     assert report["dataset"] == {
         "path": "eval/cases",
