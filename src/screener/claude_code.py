@@ -116,7 +116,7 @@ def build_options(
         max_turns=max_turns,
         output_format={"type": "json_schema", "schema": output_schema},
         cwd=str(sandbox_dir()),
-        cli_path=settings.claude_code_cli_path,
+        cli_path=settings.claude_code_cli_path or None,  # empty means the bundled CLI
         extra_args={"no-session-persistence": None, "disable-slash-commands": None},
     )
 
