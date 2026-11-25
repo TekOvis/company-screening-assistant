@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+      - name: Install locked dependencies
+        run: uv sync --locked
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format check
+        run: uv run ruff format --check .
+      # Mock mode only: no API key, no paid calls, no internet access needed by the tests.
+      - name: Tests
+        run: uv run pytest
+      - name: Evaluation in mock mode (pipeline check, not model quality)
+        run: uv run python -m screener.evaluate --mode mock --out eval/runs/ci
