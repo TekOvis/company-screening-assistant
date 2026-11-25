@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>{% block title %}Company Screening Assistant{% endblock %}</title>
+  {% block head %}{% endblock %}
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">Company Screening Assistant</a>
+    {% if backend == "mock" %}
+      <span class="mode mode-mock" title="Answers come from keyword rules, not from an LLM">
+        Mock mode: keyword rules, no LLM
+      </span>
+    {% else %}
+      <span class="mode mode-live">LLM: {{ model }}</span>
+    {% endif %}
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer">
+    <p>Educational prototype. Not financial or investment advice. Results are generated
+      automatically from public website text and may be incomplete or wrong.</p>
+  </footer>
+</body>
+</html>
