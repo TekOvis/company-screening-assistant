@@ -26,3 +26,9 @@ charge" and "not an actual charge". The correct statement is:
 `apiKeySource: none` in the logs helps diagnose which credentials were used. It does not
 prove that no paid extra usage occurred. The files' content is left as written, so the
 original output stays verifiable.
+
+**Scored against the labels of that time.** On 2026-11-26 the expected labels of cases 03,
+12 and 13 changed from `non_fit` to `insufficient_information`. These files still hold
+the old labels in `expected`, and their scores use them. Under the current labels, run 2's
+final labels match in 17 of 20 cases and run 1's in 11 of 20. See the change log in
+[docs/evaluation.md](../../docs/evaluation.md#expected-answers).

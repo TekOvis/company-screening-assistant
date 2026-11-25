@@ -4,8 +4,9 @@ A visitor can try the interface without pasting real URLs. The pages come from
 eval/cases through FixtureFetcher; nothing is requested from the internet.
 
 Examples are chosen for what they illustrate, not for how well a backend does on them.
-One of them (a distributor) is a case the mock's keyword rules get wrong. The results
-page shows the expected label next to the result.
+Two of them are cases the mock's keyword rules get wrong: a distributor, and a company
+headquartered abroad, which the mock (like the prompt) treats as not located in the
+target region. The results page shows the expected label next to the result.
 """
 
 from __future__ import annotations
@@ -18,7 +19,8 @@ from .eval_dataset import DEFAULT_CASES_DIR, EvalCase, load_cases
 EXAMPLE_TITLES: dict[str, str] = {
     "01-valves-fit-homepage": "A clear fit: a valve maker located in Germany",
     "03-valves-nonfit-other-country": (
-        "Not a fit: located in Spain; Germany is only an export market"
+        "Missing information: headquartered in Spain, Germany only an export market; "
+        "an own site in Germany is neither shown nor ruled out"
     ),
     "04-valves-insufficient-markets-only": (
         "Missing information: markets are stated, the company's own location is not"

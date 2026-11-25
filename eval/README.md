@@ -11,10 +11,17 @@ are served from these files by `FixtureFetcher`, in mock mode and in live mode a
   development on 2026-11-25, applying the label definitions below to the page texts.
 - They were committed **before any live evaluation run** (a run with a real LLM). The git
   history shows the order.
-- **Human review is still pending.** Until the author has reviewed them, treat the labels
-  as the assistant's reading of the definitions.
+- **Label review (2026-11-26).** The assistant prepared a review table: for each case the
+  criteria, the relevant page text, the expected label and facts, and the reasoning. Model
+  results were left out of it. The author went through it together with remarks from a
+  second AI assistant (Codex), agreed with the conclusions and decided the geography rule
+  below. That changed three labels. This was **not** an independent manual check of all
+  source material by the author or by anyone else.
 - Expected answers must not be changed after seeing model results without recording the
-  change and the reason in `docs/evaluation.md`. None has been changed so far.
+  change and the reason in `docs/evaluation.md`. Changed so far: cases 03, 12 and 13, on
+  2026-11-26, after both full model runs had been seen.
+- Case ids stay as first written, so they still match saved runs. The ids of 03, 12 and 13
+  still say `nonfit`, their first label.
 - Case 01 was used during development: the first real-model check, which led to a change
   in the evidence rules. All 20 cases have since been seen in two full runs, kept in
   [`results/`](results). The set is no longer blind; see the change log in
@@ -33,6 +40,14 @@ The same rules the app applies after evidence checks (`screener.verify.decide_la
 Geography means where the company **itself** is located (headquarters, offices, plants
 or other own facilities). Markets it serves, trade fairs, phone codes, currencies,
 languages or domains do not count. Exclusions are judged only on what the text states.
+
+**Geography rule (agreed 2026-11-26).**
+- **Met:** the text confirms at least one own site in the target region. Any one is
+  enough; it need not be the headquarters.
+- **Not met:** only if the text confirms that the company has no own site there. Own
+  sites elsewhere, such as a headquarters abroad, do not show that.
+- **Otherwise unknown.** Negative statements are not added to the pages just to keep a
+  `non_fit` label.
 
 ## Case format
 

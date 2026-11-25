@@ -25,8 +25,10 @@ managed by systemd behind Caddy.
   page shows a "Mock demo" banner: the demo shows the interface and the pipeline, not the
   quality of an LLM.
 - **Examples:** five ready-made synthetic examples (`DEMO_EXAMPLES=true`) run on saved
-  pages and show their expected label next to the result. One of them is a case the mock
-  gets wrong.
+  pages and show their expected label next to the result. Two of them are cases the mock
+  gets wrong: a distributor, and example 03, whose label changed on 2026-11-26. The
+  release on the server, `0ccb86db0782`, still shows example 03's old label until the
+  next update.
 - **Access:** an access token is required (`PUBLIC_DEMO=true`).
 
 **Files** in [`deploy/`](../deploy):

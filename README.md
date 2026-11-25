@@ -177,11 +177,13 @@ All settings are environment variables; `.env.example` lists every one with its 
 ## Evaluation
 
 The synthetic set in [`eval/cases`](eval/cases) has 20 invented companies on reserved
-`.example` domains (6 `fit`, 9 `non_fit`, 5 `insufficient_information`), including traps
+`.example` domains (6 `fit`, 6 `non_fit`, 8 `insufficient_information`), including traps
 such as markets mistaken for locations, trade fairs, indirect signals (phone codes,
 currency), visible and hidden prompt injection, and an off-site redirect. Expected answers
-were committed before any live run and still need human review. See
-[eval/README.md](eval/README.md).
+were committed before any live run. On 2026-11-26 the author agreed with a label review
+prepared by the assistant, and three labels changed under the agreed geography rule. See
+[eval/README.md](eval/README.md) and the change log in
+[docs/evaluation.md](docs/evaluation.md#expected-answers).
 
 ```bash
 uv run python -m screener.evaluate --mode mock                                             # free pipeline check
@@ -203,10 +205,11 @@ Each report also states the backend and how it is billed:
   reference only. Actual billing is not confirmed by this report."
 
 **Current results**, on the synthetic set only:
-- **Mock run:** 13/20. It only shows that the pipeline works end to end; keyword rules
-  are not a model.
+- **Mock run:** 10/20 with the current labels (13/20 before the label change). It only
+  shows that the pipeline works end to end; keyword rules are not a model.
 - **Claude Code, full set** (2026-11-25, `claude-sonnet-5-5`, effort `low`). Two runs,
-  both kept in [`eval/results/`](eval/results):
+  both kept in [`eval/results/`](eval/results). They were scored against the labels of
+  that time:
   - **Run 1** stopped after 14 of 20 cases because of a budget bug in the evaluation
     runner. All 14 processed cases got the expected label.
   - **Run 2**, after the fix: all 20 cases processed, all 20 final labels equal the
@@ -214,6 +217,9 @@ Each report also states the backend and how it is billed:
     model reported, the checks did not confirm 6; none was left unconfirmed in the final
     output. Median 12 s per case, 81 model requests. API-equivalent $0.46, for reference
     only.
+  - **Under the labels changed on 2026-11-26,** run 2's final labels match in 17 of 20
+    cases (run 1: 11 of 20). The model answered `non_fit` for cases 03, 12 and 13, as the
+    prompt's geography rule says. That rule has not been aligned with the new labels yet.
 
   Even 100% on these easy synthetic pages, written alongside the prompts, does not mean
   the same accuracy on real websites. The description rule changed after these runs, and
@@ -310,7 +316,8 @@ This project was built with an AI coding assistant, Claude Code by Anthropic.
   against the budgets; run the model locally through a Claude Code subscription, with no
   automatic switch to the paid API. For the demo: mock mode only, the health check rules,
   keeping the CPU and page-size limits, rolling back Caddy by removing only the demo's
-  block, and an isolated HTML parser that a time limit can stop.
+  block, and an isolated HTML parser that a time limit can stop. For the evaluation: the
+  geography rule for labels and the three label changes that follow from it.
 - **The assistant** wrote the code, tests, synthetic evaluation cases with their expected
   answers, the deployment scripts and this documentation. It ran the local checks: tests,
   linting, mock evaluation and manual smoke tests against public websites. With the
@@ -318,7 +325,9 @@ This project was built with an AI coding assistant, Claude Code by Anthropic.
   load and memory checks there. Commits carry a `Co-Authored-By: Claude` trailer.
 - **Not done yet:**
   - an independent code review;
-  - a human review of the evaluation labels;
+  - an independent manual check of the evaluation material by a person. The author agreed
+    with the conclusions of a label review prepared by the assistant, with remarks from a
+    second AI assistant (Codex), but did not check every source on their own;
   - harder evaluation cases written by someone else;
   - a run through the API backend.
 

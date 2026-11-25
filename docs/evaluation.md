@@ -16,7 +16,8 @@ is made.
 
 - 20 invented companies in [`eval/cases`](../eval/cases), each on a reserved `.example`
   domain. The format is described in [eval/README.md](../eval/README.md).
-- Label mix: 6 `fit`, 9 `non_fit`, 5 `insufficient_information`.
+- Label mix: 6 `fit`, 6 `non_fit`, 8 `insufficient_information`. Until 2026-11-26 it was
+  6 / 9 / 5; see the [change log](#expected-answers).
 - Three criteria profiles: industrial valves in Germany, B2B software for manufacturers
   in DACH, and packaged bakery products in Poland.
 - Cases cover:
@@ -40,8 +41,16 @@ is made.
 applying the label definitions to the page texts. They were committed (`Add synthetic
 evaluation set with expected answers`) before any evaluation runner or live run existed;
 the git history shows the order. A test checks that every expected fact is literally
-stated in the page texts. **Human review of the labels is still pending.** Any later
-change to expected answers must be listed in the change log below, with a reason.
+stated in the page texts. Any later change to expected answers must be listed in the
+change log below, with a reason.
+
+**Label review (2026-11-26).** The assistant prepared a review table: for each case the
+criteria, the relevant page text, the expected label and facts, and the reasoning, without
+model results. The author went through it together with remarks from a second AI assistant
+(Codex), agreed with the conclusions and decided the geography rule in
+[eval/README.md](../eval/README.md#label-definitions). Three labels changed as a result.
+This was not an independent manual check of all source material by the author or by
+anyone else.
 
 ## Running
 
@@ -119,6 +128,10 @@ The misses are what keyword rules cannot do: understand "distributor" or "bakery
 valves", read German or Polish text, or decide to fetch an About page to look for
 ownership. These numbers say nothing about a real model.
 
+**With the labels changed on 2026-11-26:** 0.50 (10/20), macro-F1 0.47. The three changed
+cases (03, 12, 13) are now misses: like the prompt, the mock treats a stated own location
+outside the target region as "not met" and answers `non_fit`.
+
 ### Claude Code, one case (2026-11-25)
 
 A first check of the `claude_code` backend, not an evaluation result. Case
@@ -151,6 +164,14 @@ Two runs of the whole set. Both used:
 
 Between the runs only the evaluation runner's budget changed; prompts, cases and label
 rules did not. Both runs are kept unchanged in [`eval/results/`](../eval/results).
+
+**Scored against the expected answers of that time.** On 2026-11-26 the labels of cases
+03, 12 and 13 changed from `non_fit` to `insufficient_information` (see the
+[change log](#expected-answers)). In both runs the model answered `non_fit` for those
+three, with geography `not_met`, as the prompt's rule says. Under the current labels,
+final labels would match in 17 of 20 cases in run 2 and 11 of 20 in run 1. That figure
+comes from the saved answers, without a new run. The tables below keep the original
+scoring.
 
 | | Run 1 | Run 2 |
 |---|---|---|
@@ -258,7 +279,14 @@ written or reviewed by someone else, are the next step.
 - Twenty short pages are far simpler and cleaner than real websites.
 - The same assistant wrote the prompts and the cases, so results are likely optimistic.
   Do not tune prompts on these cases without recording it.
-- The labels are the assistant's reading of the definitions until a human reviews them.
+- The labels are the assistant's reading of the definitions. The author agreed with a
+  review of them prepared by the assistant, with a second AI assistant's remarks.
+  Nobody has checked the source material independently.
+- Three labels were changed after both full model runs had been seen. The review table
+  left model results out, but the set is not blind.
+- The prompt and the mock still apply the earlier geography rule: stated own locations
+  outside the target region mean "not met". On cases 03, 12 and 13 the system is
+  therefore expected to disagree with the labels until the prompt is aligned.
 - The model is not deterministic. The 14 cases that completed in both runs got the same
   labels both times, but tool use and request counts differed. Two runs are too few to
   measure the variance.
@@ -271,7 +299,13 @@ written or reviewed by someone else, are the next step.
 
 ### Expected answers
 
-No changes since the set was committed (`07cd40e`).
+The set was committed in `07cd40e`.
+
+| Date | Cases | Change | Reason |
+|---|---|---|---|
+| 2026-11-26 | 03, 12, 13 | `non_fit` → `insufficient_information`; rationales rewritten; tag `geography-mismatch` → `own-site-elsewhere` | **Geography rule agreed by the author:** any confirmed own site in the target region is enough. So own sites elsewhere do not show that geography is not met, unless the text confirms that there is no own site in the target region. The full texts of these cases do not confirm that: 03 names only a headquarters in Spain, 12 only a team based in Latvia, 13 only a headquarters in France. No negative statements were added to the pages to keep the old labels. Case 16 (headquarters abroad, own office in the target region) stays `fit` under the same rule. The author decided this after the label review described [above](#data), after both full model runs had been seen |
+
+New label mix: 6 `fit`, 6 `non_fit`, 8 `insufficient_information` (before: 6 / 9 / 5).
 
 ### Pipeline, prompts and evaluation runner
 
