@@ -61,6 +61,16 @@ class Settings(BaseSettings):
     run_ttl_s: int = Field(default=2 * 3600, ge=60)  # finished runs are dropped after this
     max_active_runs: int = Field(default=2, ge=1, le=20)
 
+    # --- Public demo protection (see demo.py and docs/deployment.md) -----------------
+    # PUBLIC_DEMO=true requires an access token and refuses the claude_code backend.
+    public_demo: bool = False
+    demo_access_token: SecretStr | None = None  # when set, every page needs it
+    cookie_secure: bool = False  # set true behind HTTPS
+    runs_per_ip_per_hour: int = Field(default=10, ge=1, le=1000)
+    login_attempts_per_ip_per_15_min: int = Field(default=10, ge=1, le=100)
+    daily_max_companies: int = Field(default=200, ge=1)
+    daily_max_tokens: int = Field(default=2_000_000, ge=10_000)
+
     # --- Page fetching ---------------------------------------------------------------
     fetch_connect_timeout_s: float = Field(default=5.0, gt=0)
     fetch_read_timeout_s: float = Field(default=10.0, gt=0)
@@ -75,7 +85,21 @@ class Settings(BaseSettings):
     def _check_consistency(self) -> Settings:
         if self.max_active_runs >= self.max_stored_runs:
             raise ValueError("MAX_ACTIVE_RUNS must be smaller than MAX_STORED_RUNS")
+        if self.public_demo:
+            token = self.demo_access_token.get_secret_value() if self.demo_access_token else ""
+            if len(token.strip()) < 16:
+                raise ValueError("PUBLIC_DEMO=true requires DEMO_ACCESS_TOKEN (16+ characters)")
+            if self.llm_backend == "claude_code":
+                raise ValueError(
+                    "PUBLIC_DEMO=true cannot use LLM_BACKEND=claude_code: a personal Claude "
+                    "subscription must not serve other people; use anthropic or mock"
+                )
         return self
+
+    @property
+    def access_token(self) -> str | None:
+        token = self.demo_access_token.get_secret_value() if self.demo_access_token else ""
+        return token.strip() or None
 
 
 @lru_cache(maxsize=1)

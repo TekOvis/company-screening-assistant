@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
@@ -26,6 +26,7 @@ from pydantic import ValidationError
 from . import __version__
 from .budget import RunBudget
 from .config import Settings, get_settings
+from .demo import SESSION_COOKIE, DailyBudget, RateLimiter, same_secret, session_value
 from .export import run_to_csv, run_to_json
 from .fetcher import HttpFetcher, PageFetcher
 from .llm import create_client, model_label
@@ -131,6 +132,11 @@ def create_app(
     make_fetcher: FetcherFactory = fetcher_factory or (lambda: HttpFetcher(settings))
     runs = RunStore(max_runs=settings.max_stored_runs, ttl_s=settings.run_ttl_s)
     tasks: set[asyncio.Task[None]] = set()
+    # Demo protection (demo.py): access token, per-IP limits, daily budget.
+    access_token = settings.access_token
+    run_limiter = RateLimiter(settings.runs_per_ip_per_hour, 3600)
+    login_limiter = RateLimiter(settings.login_attempts_per_ip_per_15_min, 900)
+    daily = DailyBudget(settings.daily_max_companies, settings.daily_max_tokens)
 
     templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
     templates.env.filters["safe_href"] = safe_href
@@ -151,8 +157,51 @@ def create_app(
             "backend": settings.llm_backend,
             "model": model_label(settings),
             "max_urls": settings.max_urls_per_request,
+            "auth_enabled": access_token is not None,
             **extra,
         }
+
+    def client_ip(request: Request) -> str:
+        # Behind a reverse proxy, uvicorn's --proxy-headers sets this from X-Forwarded-For.
+        return request.client.host if request.client else "unknown"
+
+    def is_authenticated(request: Request) -> bool:
+        if access_token is None:
+            return True
+        if same_secret(request.cookies.get(SESSION_COOKIE), session_value(access_token)):
+            return True
+        scheme, _, value = request.headers.get("authorization", "").partition(" ")
+        return scheme.lower() == "bearer" and same_secret(value.strip(), access_token)
+
+    @app.middleware("http")
+    async def require_access(request: Request, call_next: Any) -> Response:
+        path = request.url.path
+        if (
+            access_token is None
+            or path in ("/healthz", "/login")
+            or path.startswith("/static/")
+            or is_authenticated(request)
+        ):
+            return await call_next(request)
+        if path.startswith(("/api/", "/openapi")) or path.endswith((".json", ".csv")):
+            return JSONResponse(
+                {"detail": "authentication required"},
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return RedirectResponse(url="/login", status_code=303)
+
+    def admit_run(ip: str, companies: int) -> tuple[int, str | None]:
+        """Per-IP rate limit, then the daily budget. Returns (token cap, refusal)."""
+        wait_s = run_limiter.retry_after_s(ip)
+        if wait_s:
+            minutes = max(1, wait_s // 60)
+            limit = settings.runs_per_ip_per_hour
+            return 0, f"Limit of {limit} screenings per hour reached; try again in {minutes} min."
+        cap, refusal = daily.reserve(companies, settings.max_tokens_per_run)
+        if refusal is None:
+            run_limiter.allow(ip)  # count the run only once it is admitted
+        return cap, refusal
 
     def validate_urls(fetcher: PageFetcher, raw_urls: list[str]) -> tuple[list[str], list[str]]:
         errors: list[str] = []
@@ -169,8 +218,8 @@ def create_app(
                 errors.append(f"{raw}: {exc}")
         return list(dict.fromkeys(normalized)), errors
 
-    async def execute_run(run: ScreeningRun, fetcher: PageFetcher) -> None:
-        run_budget = RunBudget.from_settings(settings)
+    async def execute_run(run: ScreeningRun, fetcher: PageFetcher, token_cap: int) -> None:
+        run_budget = RunBudget(max_tokens=token_cap, max_requests=settings.max_llm_requests_per_run)
         try:
             await screen_companies(
                 run.urls,
@@ -192,6 +241,7 @@ def create_app(
             run.status, run.error = "failed", "internal error while processing the run"
         finally:
             run.finished_at = utc_now()
+            daily.settle(token_cap, run_budget.used_tokens)
             await fetcher.aclose()
 
     def get_run_or_404(run_id: str) -> ScreeningRun:
@@ -203,6 +253,47 @@ def create_app(
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> Response:
         return templates.TemplateResponse(request, "index.html", context(form={}, errors=[]))
+
+    @app.get("/login", response_class=HTMLResponse)
+    async def login_form(request: Request) -> Response:
+        if access_token is None:
+            return RedirectResponse(url="/", status_code=303)
+        return templates.TemplateResponse(request, "login.html", context(error=None))
+
+    @app.post("/login", response_class=HTMLResponse)
+    async def login(request: Request, token: str = Form("")) -> Response:
+        if access_token is None:
+            return RedirectResponse(url="/", status_code=303)
+        ip = client_ip(request)
+        if not login_limiter.allow(ip):
+            wait = login_limiter.retry_after_s(ip)
+            return templates.TemplateResponse(
+                request,
+                "login.html",
+                context(error="Too many attempts. Please try again later."),
+                status_code=429,
+                headers={"Retry-After": str(wait)},
+            )
+        if not same_secret(token.strip(), access_token):
+            return templates.TemplateResponse(
+                request, "login.html", context(error="Wrong access token."), status_code=401
+            )
+        response = RedirectResponse(url="/", status_code=303)
+        response.set_cookie(
+            SESSION_COOKIE,
+            session_value(access_token),
+            max_age=12 * 3600,
+            httponly=True,
+            samesite="lax",  # not sent on cross-site form posts (CSRF protection)
+            secure=settings.cookie_secure,
+        )
+        return response
+
+    @app.post("/logout")
+    async def logout() -> Response:
+        response = RedirectResponse(url="/login" if access_token else "/", status_code=303)
+        response.delete_cookie(SESSION_COOKIE)
+        return response
 
     @app.post("/screen", response_class=HTMLResponse)
     async def submit(
@@ -244,6 +335,12 @@ def create_app(
                 request, "index.html", context(form=form, errors=errors), status_code=422
             )
 
+        token_cap, refusal = admit_run(client_ip(request), len(url_list))
+        if refusal:
+            await fetcher.aclose()
+            return templates.TemplateResponse(
+                request, "index.html", context(form=form, errors=[refusal]), status_code=429
+            )
         run = ScreeningRun(
             run_id=secrets.token_urlsafe(12),
             backend=settings.llm_backend,
@@ -254,11 +351,12 @@ def create_app(
         try:
             runs.add(run)
         except StoreFullError:
+            daily.settle(token_cap, 0)
             await fetcher.aclose()
             return templates.TemplateResponse(
                 request, "index.html", context(form=form, errors=[BUSY_MESSAGE]), status_code=429
             )
-        task = asyncio.create_task(execute_run(run, fetcher))
+        task = asyncio.create_task(execute_run(run, fetcher, token_cap))
         tasks.add(task)
         task.add_done_callback(tasks.discard)
         return RedirectResponse(url=f"/runs/{run.run_id}", status_code=303)
@@ -290,16 +388,21 @@ def create_app(
         )
 
     @app.post("/api/screen", response_model=ScreeningRun)
-    async def api_screen(payload: ScreeningRequest) -> ScreeningRun:
+    async def api_screen(request: Request, payload: ScreeningRequest) -> ScreeningRun:
         """Synchronous JSON API: waits until all companies are processed."""
         if runs.active_count() >= settings.max_active_runs:
             raise HTTPException(status_code=429, detail=BUSY_MESSAGE)
         fetcher = make_fetcher()
         run: ScreeningRun | None = None
+        token_cap = 0
+        run_budget: RunBudget | None = None
         try:
             url_list, errors = validate_urls(fetcher, payload.urls)
             if errors:
                 raise HTTPException(status_code=422, detail=errors)
+            token_cap, refusal = admit_run(client_ip(request), len(url_list))
+            if refusal:
+                raise HTTPException(status_code=429, detail=refusal)
             run = ScreeningRun(
                 run_id=secrets.token_urlsafe(12),
                 backend=settings.llm_backend,
@@ -311,7 +414,9 @@ def create_app(
                 runs.add(run)  # counts as active while it runs
             except StoreFullError as exc:
                 raise HTTPException(status_code=429, detail=BUSY_MESSAGE) from exc
-            run_budget = RunBudget.from_settings(settings)
+            run_budget = RunBudget(
+                max_tokens=token_cap, max_requests=settings.max_llm_requests_per_run
+            )
             run.results = await screen_companies(
                 url_list,
                 payload.criteria,
@@ -328,6 +433,8 @@ def create_app(
                 run.status, run.error = "failed", "the request ended before the run finished"
             if run is not None:
                 run.finished_at = utc_now()
+            if token_cap:
+                daily.settle(token_cap, run_budget.used_tokens if run_budget else 0)
             await fetcher.aclose()
 
     @app.get("/healthz")

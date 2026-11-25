@@ -45,6 +45,8 @@ button {
   background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
 }
 button:focus-visible { outline: 3px solid #9cc0ff; outline-offset: 2px; }
+.logout-form { margin: 0; }
+.link-button { margin: 0; padding: 0.2rem 0.6rem; background: transparent; color: var(--accent); border: 1px solid var(--border); font-weight: normal; font-size: 0.85rem; }
 
 .errors { background: #fdecea; border: 1px solid #f3b8b2; border-radius: 8px; padding: 0.5rem 1rem; margin-bottom: 1rem; max-width: 800px; }
 
