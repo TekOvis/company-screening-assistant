@@ -1,0 +1,52 @@
+{
+  "source": "results.jsonl",
+  "computed_with": {
+    "git_commit": "7880ef41a7c67932a319fad1a2c69aca96aa1b44",
+    "source_sha256": "512a13310c824b55854b61a2dbd26dfaf1725ec1ba2fe674138e051d3b5eff5f"
+  },
+  "fact_checks": {
+    "cases_checked": 20,
+    "cases_without_checks": 0,
+    "facts_in_model_answers": 84,
+    "not_confirmed_by_checks": 6,
+    "not_confirmed_by_field": {
+      "description": 5,
+      "industry": 1
+    },
+    "not_confirmed_list": [
+      {
+        "case": "03-valves-nonfit-other-country",
+        "field": "description",
+        "value": "Marisol Valvulas manufactures industrial gate and globe valves for the oil and gas industry and exports to customers across Europe."
+      },
+      {
+        "case": "04-valves-insufficient-markets-only",
+        "field": "description",
+        "value": "Ostwind Armaturen manufactures pneumatic control valves for district heating networks and serves customers in Germany, Austria and Switzerland."
+      },
+      {
+        "case": "06-valves-nonfit-distributor",
+        "field": "description",
+        "value": "Hansa Valve Supply is an independent distributor of industrial valves from European manufacturers, keeping items in stock. It states it does not manufacture valves itself."
+      },
+      {
+        "case": "17-bakery-fit-poland",
+        "field": "description",
+        "value": "Złoty Kłos produces packaged bread, rolls and pastries for supermarket chains. Its bakery plant is located in Poznań, Poland."
+      },
+      {
+        "case": "18-bakery-nonfit-retail-only",
+        "field": "description",
+        "value": "Mała Piekarnia runs five neighbourhood bakery shops in Kraków, Poland, baking fresh every morning and selling only in its own shops."
+      },
+      {
+        "case": "18-bakery-nonfit-retail-only",
+        "field": "industry",
+        "value": "Bakery (food production and retail)"
+      }
+    ],
+    "facts_in_final_answers": 78,
+    "final_without_supported_evidence": 0,
+    "final_without_supported_evidence_list": []
+  }
+}

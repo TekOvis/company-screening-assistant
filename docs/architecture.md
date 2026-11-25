@@ -172,8 +172,9 @@ or subscription rate limits in products for other people.
   files. `--bare` is not used, because it accepts only API keys. If `ANTHROPIC_API_KEY`,
   `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` or a cloud-provider switch is set, the
   backend refuses to start: in print mode Claude Code would use that instead of the
-  subscription. The session's `apiKeySource` is logged (only the source name); the first
-  real run reported `none`, meaning no API key was used.
+  subscription. The session's `apiKeySource` is logged, only the source name. Real runs
+  so far reported `none`, which helps diagnose the credentials used. It does not prove
+  that no paid extra usage occurred.
 - **Locked down.** The agent is limited to what it needs:
   - `tools=[]`: no built-in tools;
   - `strict_mcp_config=True`: only the app's own MCP server, none of the user's;
@@ -196,6 +197,10 @@ or subscription rate limits in products for other people.
 - **Subscription limit.** A rate-limit event with status `rejected`, any paid `overage`,
   or a `rate_limit` / `billing_error` reply stops the stream and the whole run. The
   message names the window and its reset time; nothing switches to the API.
+  - This reacts to what Claude Code reports. The request after which the report arrives
+    may already have counted.
+  - The app cannot check in advance whether paid extra usage is enabled on the account;
+    the account owner has to check that.
 
 ## Page fetching and SSRF protection
 

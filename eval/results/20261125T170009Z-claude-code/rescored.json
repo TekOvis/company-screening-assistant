@@ -1,0 +1,47 @@
+{
+  "source": "results.jsonl",
+  "computed_with": {
+    "git_commit": "7880ef41a7c67932a319fad1a2c69aca96aa1b44",
+    "source_sha256": "512a13310c824b55854b61a2dbd26dfaf1725ec1ba2fe674138e051d3b5eff5f"
+  },
+  "fact_checks": {
+    "cases_checked": 14,
+    "cases_without_checks": 6,
+    "facts_in_model_answers": 62,
+    "not_confirmed_by_checks": 5,
+    "not_confirmed_by_field": {
+      "description": 4,
+      "markets_served": 1
+    },
+    "not_confirmed_list": [
+      {
+        "case": "01-valves-fit-homepage",
+        "field": "description",
+        "value": "Brightwater Valve Works designs and manufactures butterfly and ball valves for chemical plants and refineries."
+      },
+      {
+        "case": "01-valves-fit-homepage",
+        "field": "markets_served",
+        "value": "chemical plants and refineries"
+      },
+      {
+        "case": "03-valves-nonfit-other-country",
+        "field": "description",
+        "value": "Marisol Valvulas manufactures industrial gate and globe valves for the oil and gas industry and exports to customers across Europe."
+      },
+      {
+        "case": "06-valves-nonfit-distributor",
+        "field": "description",
+        "value": "Hansa Valve Supply is an independent distributor of industrial valves from European manufacturers, keeping more than 20,000 items in stock. It states that it does not manufacture valves itself."
+      },
+      {
+        "case": "12-software-nonfit-latvia",
+        "field": "description",
+        "value": "Baltic Forge Software develops quality-control and traceability software for metalworking factories, working with manufacturers across the Baltics and the Nordics."
+      }
+    ],
+    "facts_in_final_answers": 57,
+    "final_without_supported_evidence": 0,
+    "final_without_supported_evidence_list": []
+  }
+}

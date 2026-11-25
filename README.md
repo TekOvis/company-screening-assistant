@@ -58,7 +58,7 @@ or an environment variable. A backend never switches to another one on its own.
 | `LLM_BACKEND` | Model | Billing | Use it for |
 |---|---|---|---|
 | `mock` (default) | none: keyword rules | free | development, tests, CI |
-| `claude_code` | Claude through your local Claude Code login | your Claude subscription: usage limits, no per-token charge | personal local runs and evaluation |
+| `claude_code` | Claude through your local Claude Code login | authorization via your Claude subscription; the app cannot confirm actual billing (for example paid extra usage, if enabled on the account) | personal local runs and evaluation |
 | `anthropic` | Claude through the Anthropic API | pay per token (`ANTHROPIC_API_KEY`) | a deployed demo, API evaluation |
 
 ### Using your Claude subscription (`claude_code`)
@@ -91,9 +91,12 @@ How it behaves:
 - Limits: turns per run (`CLAUDE_CODE_MAX_TURNS`), a timeout per run
   (`CLAUDE_CODE_TIMEOUT_S`) and one Claude Code process at a time
   (`CLAUDE_CODE_CONCURRENCY`).
-- When the subscription's usage limit is reached, or paid overage would start, the run
-  stops with a message that names the limit window and its reset time. Nothing falls back
-  to the API.
+- When Claude Code reports that the subscription's usage limit is reached, or that paid
+  extra usage is in use, the run stops with a message that names the limit window and its
+  reset time. Nothing falls back to the API.
+  - The stop reacts to that report, so the request before it may already have counted.
+  - The app cannot check in advance whether paid extra usage is enabled on your account;
+    check that yourself.
 
 > **Personal, local use only.** Anthropic does not allow offering claude.ai login or
 > subscription rate limits in products for other people. A public demo must use the
@@ -186,27 +189,34 @@ uv run python -m screener.evaluate --mode api --only 01-valves-fit-homepage --ye
 ```
 
 Pages always come from the saved files, with every backend. A real-model run prints its
-limits first and does not start without `--yes`. Reports include schema-valid rate,
-accuracy, macro-F1, a confusion matrix, fact checks, time and tokens. Each report also
-states the backend and how it is billed:
-- a cost for the API, at explicitly listed tariffs;
-- for Claude Code, "no per-token charge" plus an API-equivalent figure that is clearly
-  marked as an estimate, not a charge.
+limits first and does not start without `--yes`. Reports include:
+- schema-valid rate;
+- accuracy and macro-F1, before and after the evidence checks, and a confusion matrix;
+- unconfirmed facts before and after the checks;
+- time and tokens;
+- the code version.
 
-**Current results.**
+Each report also states the backend and how it is billed:
+- **API:** a cost at explicitly listed tariffs.
+- **Claude Code:** "Authorization via Claude subscription; the API-equivalent is given for
+  reference only. Actual billing is not confirmed by this report."
+
+**Current results**, on the synthetic set only:
 - **Mock run:** 13/20. It only shows that the pipeline works end to end; keyword rules
   are not a model.
-- **Claude Code, full set** (2026-11-25, `claude-sonnet-5-5`, effort `low`):
-  - 20/20 correct final labels, all answers schema-valid, no invented locations;
-  - median 12 s per case, 81 model requests;
-  - API-equivalent estimate $0.46 for the set. That is not a charge: the run used the
-    subscription.
+- **Claude Code, full set** (2026-11-25, `claude-sonnet-5-5`, effort `low`). Two runs,
+  both kept in [`eval/results/`](eval/results):
+  - **Run 1** stopped after 14 of 20 cases because of a budget bug in the evaluation
+    runner. All 14 processed cases got the expected label.
+  - **Run 2**, after the fix: all 20 cases processed, all 20 final labels equal the
+    expected labels, all answers schema-valid, no invented locations. Of 84 facts the
+    model reported, the checks did not confirm 6; none was left unconfirmed in the final
+    output. Median 12 s per case, 81 model requests. API-equivalent $0.46, for reference
+    only.
 
-  The first full run stopped after 14 cases, all correct, because of a budget bug in the
-  evaluation runner. The bug was fixed and the set run again.
-
-  This is a pipeline check on easy synthetic pages written alongside the prompts. It is not
-  an accuracy estimate for real companies.
+  Even 100% on these easy synthetic pages, written alongside the prompts, does not mean
+  the same accuracy on real websites. The description rule changed after these runs, and
+  its effect has not been measured yet.
 - **API backend:** not run yet (no API key).
 
 Details: [docs/evaluation.md](docs/evaluation.md).

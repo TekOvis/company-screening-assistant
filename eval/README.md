@@ -14,7 +14,11 @@ are served from these files by `FixtureFetcher`, in mock mode and in live mode a
 - **Human review is still pending.** Until the author has reviewed them, treat the labels
   as the assistant's reading of the definitions.
 - Expected answers must not be changed after seeing model results without recording the
-  change and the reason in `docs/evaluation.md`.
+  change and the reason in `docs/evaluation.md`. None has been changed so far.
+- Case 01 was used during development: the first real-model check, which led to a change
+  in the evidence rules. All 20 cases have since been seen in two full runs, kept in
+  [`results/`](results). The set is no longer blind; see the change log in
+  `docs/evaluation.md`.
 
 ## Label definitions
 
