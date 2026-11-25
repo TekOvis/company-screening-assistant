@@ -196,9 +196,18 @@ states the backend and how it is billed:
 **Current results.**
 - **Mock run:** 13/20. It only shows that the pipeline works end to end; keyword rules
   are not a model.
-- **Claude Code, one case** (2026-11-25): case 01 was classified correctly (fit),
-  13 s, 3 model requests.
-- **Full set:** not run yet with either real backend.
+- **Claude Code, full set** (2026-11-25, `claude-sonnet-5-5`, effort `low`):
+  - 20/20 correct final labels, all answers schema-valid, no invented locations;
+  - median 12 s per case, 81 model requests;
+  - API-equivalent estimate $0.46 for the set. That is not a charge: the run used the
+    subscription.
+
+  The first full run stopped after 14 cases, all correct, because of a budget bug in the
+  evaluation runner. The bug was fixed and the set run again.
+
+  This is a pipeline check on easy synthetic pages written alongside the prompts. It is not
+  an accuracy estimate for real companies.
+- **API backend:** not run yet (no API key).
 
 Details: [docs/evaluation.md](docs/evaluation.md).
 
@@ -279,8 +288,11 @@ This project was built with an AI coding assistant, Claude Code by Anthropic.
   answers, and this documentation, and ran the local checks: tests, linting, mock
   evaluation and manual smoke tests against public websites. Commits carry a
   `Co-Authored-By: Claude` trailer.
-- **Not done yet:** an independent code review, a human review of the evaluation labels,
-  and a full evaluation with a real model (so far one case through Claude Code).
+- **Not done yet:**
+  - an independent code review;
+  - a human review of the evaluation labels;
+  - harder evaluation cases written by someone else;
+  - a run through the API backend.
 
 ## License
 

@@ -130,14 +130,60 @@ The final label did not depend on either. Whether a description should also acce
 labelled for the business is an open design question. It has not been changed after
 seeing this run.
 
-### Full set with a real model
+### Full set through Claude Code (2026-11-25)
 
-**Not run yet** with either backend. Results go here with:
-- the date, backend, model and effort;
-- the dataset and prompt fingerprints;
-- the full metric tables;
-- the token usage and how it was billed, including the evidence-check requests and any
-  retries.
+Two runs of the whole set, with the same dataset (sha256 `1cdffc833ab6`), the same prompts
+(sha256 `1e4d53b4453f`), model `claude-sonnet-5-5` and effort `low`. Between the runs only
+the evaluation runner's budget changed. Prompts, cases and label rules did not.
+
+**Run 1: stopped by the runner's budget after 14 cases.** The runner shared one per-run
+cap of 60 requests across all 20 cases. That cap is sized for one web screening of up to
+10 companies. After 60 requests the remaining cases were refused before any model call.
+Case 15 was refused before its evidence check, although its unverified label was
+correct. All 14 completed cases got the expected label. Counted over all 20 cases,
+accuracy was 0.70 (14/20) with macro-F1 0.79, because a missing label counts as wrong. This was a
+bug in the runner, not in the model or the app. It was fixed in `Eval: give each case its
+own share of the budget`: an evaluation now gets the per-company caps once per case.
+
+**Run 2: the full set.**
+
+| Metric | Value |
+|---|---|
+| Final label accuracy | 1.00 (20/20) |
+| Macro-F1 | 1.00 |
+| Model's own label, before checks | 1.00 (20/20) |
+| Schema-valid final answers | 20 of 20 |
+| Company name correct / own locations exactly right | 20/20 / 20/20 |
+| Markets found | 7/7 |
+| Locations invented or taken from traps (before and after checks) | none |
+| Evidence items | 106. All 106 quotes are verbatim on the cited page; the second check supported 100, called 4 unclear and found 2 not supported |
+| Tool calls | 12 in 8 cases |
+| Time per case | median 12.1 s, max 18.5 s; whole run 268 s |
+| Model requests | 81, of which 0 failed; 3–5 per case: agent turns plus one evidence check |
+| Tokens | 116 input, 34,524 output, 39,393 cache write, 166,636 cache read |
+| Billing | Claude subscription, no per-token charge. API-equivalent estimate: $0.46 for the set, about $0.023 per case. This is not a charge |
+| Session | credential source reported as `none` for every Claude Code run |
+
+Confusion matrix of final labels: all counts on the diagonal (fit 6, non_fit 9,
+insufficient_information 5); no errors and no `no_label`.
+
+**What the evidence checks removed.** In 5 cases (03, 04, 06, 17, 18) the description was
+removed. The model writes a description that combines several facts, such as product,
+location and customers. It then cites one quote that covers only part of them, and the
+second check correctly answers "unclear" or "not supported" for the whole sentence. In
+case 18 the industry was removed too, and the industry criterion became `unknown`. The
+label stayed `non_fit` because of the retail-only business. No label changed because of
+the checks.
+
+**How to read this.** A perfect score on 20 short, clean pages written by the same
+assistant that wrote the prompts shows something limited:
+- the pipeline works end to end with a real model;
+- the traps in this set (markets vs locations, indirect signals, trade fairs, prompt
+  injection, off-site redirect) did not mislead it.
+
+It is not an accuracy estimate for real websites. The set is too small and too easy to
+separate good settings from better ones. Harder cases, written or reviewed by someone
+else, are the next step.
 
 ## Threats to validity
 
@@ -145,7 +191,10 @@ seeing this run.
 - The same assistant wrote the prompts and the cases, so results are likely optimistic.
   Do not tune prompts on these cases without recording it.
 - The labels are the assistant's reading of the definitions until a human reviews them.
-- A single run of a non-deterministic model can vary; repeated runs would show how much.
+- The model is not deterministic. The 14 cases that completed in both runs got the same
+  labels both times, but tool use and request counts differed. Two runs are too few to
+  measure the variance.
+- With a perfect score, the set no longer shows differences between settings.
 
 ## Change log of expected answers
 
