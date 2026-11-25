@@ -13,7 +13,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from .agent import assess_company
+from .agent import run_agent
 from .budget import CompanyBudget, RunBudget
 from .config import Settings
 from .fetcher import FetchError, PageFetcher
@@ -54,16 +54,15 @@ async def screen_company(
 
     budget = CompanyBudget.from_settings(run_budget, settings)
     try:
-        outcome = await assess_company(
+        outcome = await run_agent(
             client, settings, criteria, homepage, fetcher, budget=budget, usage=result.usage
         )
     except Exception:  # last-resort guard: one company must not break the whole run
         logger.exception("unexpected error while assessing %s", raw_url)
         return finish("internal_error", "internal error while assessing this company")
 
-    result.pages_fetched = [page.url for page in outcome.pages]
+    result.pages_fetched = list(outcome.pages)
     result.tool_calls = outcome.tool_calls
-    result.warnings = outcome.warnings
     assessment = outcome.assessment
     if assessment is not None:
         result.company_name = assessment.company_name

@@ -71,11 +71,12 @@ headquartered in Lyon, France."
 _TOOL_SECTION = """
 ## Tool use
 - If the pages you have lack information the criteria need (for example where the \
-company is based or what it does), you may call fetch_company_page with a path from the \
-<site_links> lists, such as an about, company, locations or contact page.
+company is located or what it does), you may call fetch_company_page with a path on the \
+same website from the <site_links> lists, such as an about, company, locations or \
+contact page.
 - Fetch at most {max_tool_calls} pages in total, only pages likely to answer the criteria.
-- When you have enough information, or the tool reports that the limit is reached, give \
-the final answer.
+- When you have enough information, or tools are no longer available, give the final \
+answer.
 """
 
 

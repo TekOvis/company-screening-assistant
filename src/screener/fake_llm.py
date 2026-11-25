@@ -187,7 +187,8 @@ class _FakeMessages:
         self.requests: list[dict[str, Any]] = []
 
     async def create(self, **params: Any) -> Message:
-        self.requests.append(params)
+        # Copy the message list: the app keeps appending to it after the call.
+        self.requests.append({**params, "messages": list(params.get("messages", []))})
         if self._script is None:
             return heuristic_reply(params)
         if not self._script:
