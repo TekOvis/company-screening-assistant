@@ -167,6 +167,8 @@ All settings are environment variables; `.env.example` lists every one with its 
 | `MAX_TOKENS_PER_COMPANY` / `_PER_RUN` | 80,000 / 600,000 | token budgets, reserved before each call |
 | `MAX_URLS_PER_REQUEST` | 10 | URLs per screening |
 | `MAX_ACTIVE_RUNS` / `MAX_STORED_RUNS` / `RUN_TTL_S` | 2 / 50 / 7200 | in-memory job limits |
+| `DEMO_ACCESS_TOKEN` / `PUBLIC_DEMO` | empty / `false` | access token for every page and the API; `PUBLIC_DEMO=true` makes it mandatory |
+| `RUNS_PER_IP_PER_HOUR` / `DAILY_MAX_COMPANIES` / `DAILY_MAX_TOKENS` | 10 / 200 / 2,000,000 | demo abuse and spending limits |
 
 ## Evaluation
 
@@ -218,9 +220,30 @@ Details: [docs/evaluation.md](docs/evaluation.md).
   like formulas are neutralised.
 - **Jobs.** Results live in memory only, with caps on stored jobs, their lifetime and
   jobs running at once.
+- **Demo access.** With `DEMO_ACCESS_TOKEN` set, every page and the API need the token:
+  - the login form sets an HttpOnly cookie derived from the token, never the token itself;
+  - the API takes `Authorization: Bearer <token>`;
+  - comparisons are constant-time, and login attempts are limited per IP.
+
+  Screenings are limited per IP per hour. A daily budget of companies and tokens covers
+  the whole server: each run reserves its token cap from what is left for the day.
 
 A provider-side spend limit is useful as a last line of defence. The documentation does
 not say how quickly it takes effect, so it does not replace the app's own limits.
+
+## Deployment
+
+The [`Dockerfile`](Dockerfile) builds a small image for the demo server. It runs as a
+non-root user and leaves out dev tools and the `claude-code` extra. Its defaults are safe:
+mock backend, `PUBLIC_DEMO=true` (no start without a token), HTTPS-only cookie.
+[docs/deployment.md](docs/deployment.md) covers:
+- the API-key setup;
+- a loopback-only port behind an HTTPS reverse proxy;
+- the layers of spending protection;
+- checks after deploying, and rollback.
+
+Not done yet: the image has not been built (no Docker on the development machine), and
+nothing is deployed.
 
 ## Limitations
 

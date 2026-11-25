@@ -57,7 +57,8 @@ never switches to another one on its own.
 | `claude_code.py` | the `claude_code` backend: locked-down Claude Code options, our tool as an MCP server, limits, subscription-limit handling |
 | `budget.py` | per-company and per-run token and request budgets |
 | `pipeline.py` | per-company orchestration and bounded concurrency |
-| `web.py`, `templates/`, `static/` | form, results table, exports, JSON API, in-memory run store |
+| `web.py`, `templates/`, `static/` | form, results table, exports, JSON API, in-memory run store, access middleware |
+| `demo.py` | public-demo protection: session cookie, rate limiter, daily budget |
 | `export.py` | JSON and CSV export, CSV formula protection |
 | `fake_llm.py` | mock client: returns real SDK message objects built from keyword rules |
 | `evaluate.py`, `metrics.py`, `pricing.py`, `eval_dataset.py` | offline evaluation |
@@ -149,6 +150,9 @@ transparency and evaluation.
   limit.
 - Error messages shown to users are written by the app and never include request headers
   or keys.
+- An evaluation run gets the sum of the per-company caps, because each case is a separate
+  one-company screening. The per-run caps are sized for one web screening of up to
+  `MAX_URLS_PER_REQUEST` companies.
 
 ## Claude Code backend
 
@@ -233,3 +237,30 @@ The evaluation set has a visible injection, a hidden one and an off-site redirec
   - at most `MAX_ACTIVE_RUNS` run at once, otherwise the form and the API answer 429.
 - Within a run, `CONCURRENCY` companies are processed in parallel.
 - The results page refreshes itself with `<meta http-equiv="refresh">`, without JavaScript.
+
+## Public demo protection
+
+These checks are active only when `DEMO_ACCESS_TOKEN` is set. `PUBLIC_DEMO=true` makes the
+token mandatory and refuses the `claude_code` backend at startup.
+
+- **Access.** A middleware lets through only `/healthz`, `/login` and static files.
+  Everything else needs one of:
+  - the session cookie: an HMAC of a fixed label keyed with the token, so the cookie never
+    contains the token; HttpOnly, SameSite=Lax, Secure when `COOKIE_SECURE=true`;
+  - a `Bearer` header with the token.
+
+  Without access, pages redirect to `/login`, while the API and exports answer 401.
+  Comparisons use `hmac.compare_digest`.
+- **Rate limits.** Sliding windows per client IP:
+  - `LOGIN_ATTEMPTS_PER_IP_PER_15_MIN` for login attempts;
+  - `RUNS_PER_IP_PER_HOUR` for screenings.
+
+  Behind a reverse proxy the client IP comes from `X-Forwarded-For`, which uvicorn trusts
+  only because the container port is bound to loopback.
+- **Daily budget.** `DAILY_MAX_COMPANIES` and `DAILY_MAX_TOKENS` apply per UTC day.
+  - A run first reserves `min(MAX_TOKENS_PER_RUN, tokens left today)`; that becomes its
+    token cap.
+  - When the run ends, the reservation is replaced by the tokens it actually used.
+  - So concurrent runs cannot overspend the day.
+- **Where the limits live.** All counters are in memory: one process, reset on restart.
+  The provider's workspace spend limit stays the outer line of defence.
