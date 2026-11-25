@@ -1,13 +1,11 @@
 # Deploying the demo
 
-**Status (2026-11-25, 21:14 UTC):** the mock demo is live at
-<https://screener.rustwatchtower.net>, release `7804bc4373aa`, with an external health
-check every minute. An access token is required. See
-[Activation record](#activation-record-2026-11-25) and
-[Update: health check](#update-health-check-2026-11-25-2112-utc).
-- **Local, not deployed:** HTML parsing moved from the parser thread to a child process
-  that a time limit can stop. See
-  [Parsing in a child process](#parsing-in-a-child-process-local-not-deployed).
+**Status (2026-11-25, 23:10 UTC):** the mock demo is live at
+<https://screener.rustwatchtower.net>, release `0ccb86db0782`, with an external health
+check every minute. Pages are parsed in a child process that a time limit can stop. An
+access token is required. See [Activation record](#activation-record-2026-11-25),
+[Update: health check](#update-health-check-2026-11-25-2112-utc) and
+[Update: parser in a child process](#update-parser-in-a-child-process-2026-11-25-2305-utc).
 - It runs as a **mock-mode** service on a small VPS shared with another service, without
   Docker. See [Shared VPS without Docker](#shared-vps-without-docker-planned-first-demo).
 - The Dockerfile route below is kept for other hosts. The image has not been built yet,
@@ -97,8 +95,8 @@ the largest job with 1 MB pages.
 
 With parsing in the event loop, the health check would have restarted the service in
 the middle of an ordinary large job. On the server (slower CPU, `CPUQuota=50%`) the delays
-would be longer still. In the deployed release `7804bc4373aa`, parsing runs in one
-dedicated thread (replaced locally by a child process, see the next section):
+would be longer still. Release `7804bc4373aa` parses in one dedicated thread (since
+`0ccb86db0782`, a child process; see the next section):
 - One thread, not more: parsing is CPU-bound Python, so more threads are not faster (the
   GIL) but hold more pages in memory and slow the event loop down more.
 - If a time limit fires, a page waiting for the parser is dropped. A page being parsed is
@@ -108,7 +106,7 @@ dedicated thread (replaced locally by a child process, see the next section):
 delays were a few times the local maximum of 0.77 s, they would still stay below 5 s.
 That is an estimate, not a measurement.
 
-### Parsing in a child process (local, not deployed)
+### Parsing in a child process
 
 **The problem with the parser thread.** A thread cannot be stopped. If one page never
 finished parsing (a pathological page or a parser bug), the time limit ended the wait but
@@ -157,9 +155,10 @@ pages, two companies in parallel; two runs each):
 - **On Linux,** starting the child also starts multiprocessing's small resource tracker
   process. It does not exist on Windows and is not in these numbers.
 
-**Not measured on the server.** Neither the memory of the app, the parser and the tracker
-together in the service's cgroup, nor the `/healthz` times there. The estimate is under
-200 MB against `MemoryMax=300M`. This must be measured after deployment.
+**On the server** (deployed 2026-11-25, 23:05 UTC): the app, the tracker and the parser
+run in the service's cgroup. The largest job peaked at 149 MB for the whole cgroup, with
+`/healthz` at most 0.12 s. See
+[Update: parser in a child process](#update-parser-in-a-child-process-2026-11-25-2305-utc).
 
 ### Load check on the server (2026-11-25, 19:12–19:21 UTC)
 
@@ -214,26 +213,29 @@ The unit sets:
 - **CPU:** `CPUQuota=50%`, `CPUWeight=20`, `Nice=10`;
 - **Other:** `IOWeight=20`, `TasksMax=64`.
 
-300 MB is about 2.3 times the peak measured on the server for the largest job. If the
-service exceeds it, the kernel kills this service only, and systemd restarts it.
+300 MB is about 2 times the cgroup peak of 149 MB measured on the server for the largest
+job (app, tracker and parser together, under the service's limits; see
+[Update: parser in a child process](#update-parser-in-a-child-process-2026-11-25-2305-utc)).
+If the service exceeds it, the kernel kills this service only, and systemd restarts it.
 
 **A memory limit does not prevent hangs.** Two mechanisms bound a stuck screening:
 - **Per screening:** `RUN_TIMEOUT_S` (300 s) stops it. Unfinished companies are skipped,
   finished results are kept, and the run's slot is freed. The same holds for an internal
   error. Tests cover a site that never answers, the JSON API and an internal error.
-- **Per page:** fetching has its own connect, read and total timeouts.
+- **Per page:** fetching has its own connect, read and total timeouts. The total one
+  (`FETCH_TOTAL_TIMEOUT_S`, 25 s) includes parsing: a parse still running then is killed
+  with its child process, and the next page starts a new one.
 
 These bounds do not cover a blocked event loop. Then the time limit cannot fire,
 `/healthz` stops answering, and neither `Restart=on-failure` nor `MemoryMax` notices it.
 The [health check](#health-check) covers that case.
 
 What the health check does **not** cover:
-- **A stuck page in the parser thread** (deployed release). The event loop stays free, so
-  `/healthz` keeps answering and nothing is restarted. Later pages wait behind the stuck
-  one, and screenings end through the fetch and run time limits with errors until the
-  service restarts. Pages are capped at 1 MB, which makes this less likely, but it is not
-  excluded. The local change kills a stuck parse at the time limit instead (see
-  [Parsing in a child process](#parsing-in-a-child-process-local-not-deployed)).
+- **A slow or stuck page.** It does not need the health check: the page's time limit
+  kills the parse (see [Parsing in a child process](#parsing-in-a-child-process)). The
+  page ends as a `fetch_error (timeout)` in the results; the journal does not log it.
+  Release `7804bc4373aa` (the rollback target) still has the parser thread, where such a
+  page blocks all later pages until the service restarts.
 - **Wrong answers.** `/healthz` only shows that the app answers, not that screenings
   work.
 
@@ -446,7 +448,9 @@ This was not a maximum job.
   process measured 129 MB. This is unexplained.
 - **So 129 MB is not a confirmed peak of the service.** It is a single process-level
   measurement from the transient test. The service's cgroup peak under a maximum job has
-  not been measured.
+  not been measured. (Later, the whole cgroup of a transient unit with the service's
+  limits was sampled directly: 149 MB, see
+  [Update: parser in a child process](#update-parser-in-a-child-process-2026-11-25-2305-utc).)
 
 **Backups and rollback.**
 
@@ -523,6 +527,98 @@ target), their archives, all backups, the settings and Caddy. The unit backups i
 - **Health check only:** `systemctl disable --now company-screener-health.timer`.
 - **Caddy:** `bash /opt/company-screener/releases/7804bc4373aa/deploy/caddy-detach.sh`,
   with `--dry-run` first.
+
+### Update: parser in a child process (2026-11-25, 23:05 UTC)
+
+**What changed:** release `0ccb86db0782` (commits `31bf052` and `0ccb86d`). Pages are
+parsed in a child process that a time limit can stop; see
+[Parsing in a child process](#parsing-in-a-child-process). The unit changed only in
+comments; the packages are the same. Caddy was not touched.
+
+**Backups before the install.**
+- `/var/backups/company-screener/20261125T230413Z-before-0ccb86db0782/` (mode 700): the app
+  unit, the health check unit, timer and script, `screener.env` (mode 600, compared with
+  the live file), the release pointer (`7804bc4373aa`) and `SHA256SUMS`.
+- `install.sh` made its own backup: `/var/backups/company-screener/20261125T230534Z/`.
+- Release `7804bc4373aa` and its archive stay as the rollback target.
+
+**Steps and checks** (all passed):
+- **Install and restart** at 23:05:39 UTC. The archive's SHA-256 matched the local one.
+  `/healthz` answered with the mock backend, and the process uses files from
+  `0ccb86db0782` only. Without the token, `/` redirects to `/login`.
+- **Real public pages.** The examples run on saved pages and never reach the parser, so a
+  screening of two real sites was sent through `https://screener.rustwatchtower.net/api/screen`:
+  `https://rustwatchtower.net/` and `https://deutsch.rustwatchtower.net/`. Both are sites on
+  the same server. Both came back `ok` with their pages fetched, in 1.1 s, with no parser
+  warning in the journal.
+- **One cgroup.** Before the first page: only the app process. After it, three processes,
+  all in `/system.slice/company-screener.service`, all user `screener`, and no other
+  process of that user anywhere:
+  - the app (`python -m uvicorn`), RSS 99 MB;
+  - multiprocessing's resource tracker, child of the app, 12 MB;
+  - the parser, child of the app, 24 MB.
+
+  The cgroup's `memory.max` is 314,572,800 bytes (300 MB) and covers all three;
+  `memory.current` was 103 MB.
+- **Stop with the parser running.** `systemctl stop` took 0.17 s with result `success`.
+  All three processes ended, no process of user `screener` was left, and the cgroup was
+  removed. The journal shows a normal uvicorn shutdown and no forced kill. After
+  `systemctl start`, a real page was parsed again by a new parser.
+
+**Largest job under the service's limits.** The service cannot be given 1 MB pages
+without serving them from a public site. So, as in the first load check,
+`scripts/measure_memory.py` ran in a transient unit with the same user, resource limits
+and hardening as the service, and `RuntimeMaxSec=600`. The job: 10 sites × 4 pages of
+1 MB, two companies in parallel. The live service kept running. The transient unit's
+cgroup was sampled every second, and every 2 seconds Rust Watchtower's local API and
+public HTTPS and the live screener's `/healthz` were probed. No stuck parser was tested
+on the server.
+
+Stop rules, fixed before the run: the check stops at once after 3 failed Rust Watchtower
+answers in a row. The release is rolled back on any OOM, 2 or more `/healthz` answers over
+5 s, 2 or more failed Rust Watchtower answers, or a Rust Watchtower HTTPS median above
+0.25 s during the job. That is 1.5 times the 0.168 s of the first load check, which was
+accepted. None of them was reached.
+
+- **Job:** 40 pages, all `ok`. CPU 62.1 s (app 10.7 s, parser 51.4 s); wall time 125.4 s,
+  which matches `CPUQuota=50%`.
+- **Memory of the whole cgroup** (129 samples): `memory.peak` 149 MB, `memory.current`
+  at most 148 MB, at most 3 processes. `oom` and `oom_kill` were 0, and the kernel log
+  had no OOM line. The processes' own peaks (app 108 MB + parser 60 MB = 168 MB) add up
+  to more, because RSS counts shared pages in each process.
+- **`/healthz` of the app under load:** 125 checks, median 0.01 s, max 0.12 s, none over 1 s.
+- **The live screener's `/healthz` meanwhile:** median 0.007 s, max 0.024 s, all 200.
+
+| Rust Watchtower, seconds | Before (30 s) | During the job | After (20 s) |
+|---|---|---|---|
+| Local API: median / p95 / max | 0.005 / 0.006 / 0.006 | 0.006 / 0.024 / 0.027 | 0.006 / 0.009 / 0.009 |
+| Public HTTPS: median / p95 / max | 0.073 / 0.108 / 0.108 | **0.142 / 0.235 / 0.250** | 0.080 / 0.158 / 0.158 |
+| Load average (1 min), max | 0.10 | 0.83 | 0.50 |
+
+All Rust Watchtower answers were 200 and it logged no warnings. As in the first load
+check, its public HTTPS was about twice as slow during the job (median +69 ms), and its
+API was not slowed down. Afterwards: all services active, no app warnings, the health
+check journal empty, `NRestarts` 0, no leftover transient unit.
+
+**Discrepancy, unexplained.** When the service was stopped, systemd reported `80.7M memory
+peak`. A second earlier, `memory.current` read 103 MB directly. The measurements above
+use the cgroup files, not systemd's summary.
+
+**Rolling back this update** (back to `7804bc4373aa`, parser thread):
+
+```bash
+ln -sfn /opt/company-screener/releases/7804bc4373aa /opt/company-screener/current.new \
+  && mv -T /opt/company-screener/current.new /opt/company-screener/current
+install -m 644 /var/backups/company-screener/20261125T230413Z-before-0ccb86db0782/company-screener.service \
+  /etc/systemd/system/company-screener.service
+systemctl daemon-reload
+systemctl restart company-screener
+curl -fsS http://127.0.0.1:8001/healthz
+```
+
+The settings file did not change; its copy is in the same backup. The health check can
+stay on: `7804bc4373aa` answers `/healthz` during large jobs. That release still has the
+stuck-page problem described above.
 
 ## Docker route (other hosts)
 

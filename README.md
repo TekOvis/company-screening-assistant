@@ -270,7 +270,7 @@ Measurements, the limits and what they do not guarantee, activation and rollback
 [docs/deployment.md](docs/deployment.md).
 
 Current state (2026-11-25): the mock demo is live at
-<https://screener.rustwatchtower.net>, release `7804bc4373aa`. It needs an access token,
+<https://screener.rustwatchtower.net>, release `0ccb86db0782`. It needs an access token,
 and there is no LLM on the server. The Docker image has not been built, because Docker is
 not available on the development machine.
 
