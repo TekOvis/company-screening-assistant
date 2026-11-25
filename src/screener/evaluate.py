@@ -518,12 +518,15 @@ def render_markdown(report: dict[str, Any], outcomes: list[CaseOutcome]) -> str:
 
 
 def write_outputs(out_dir: Path, report: dict[str, Any], outcomes: list[CaseOutcome]) -> None:
+    # newline="\n": the same bytes on every OS, so saved runs stay byte-identical in Git.
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "report.json").write_text(
-        json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8"
+        json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8", newline="\n"
     )
-    (out_dir / "report.md").write_text(render_markdown(report, outcomes), encoding="utf-8")
-    with (out_dir / "results.jsonl").open("w", encoding="utf-8") as handle:
+    (out_dir / "report.md").write_text(
+        render_markdown(report, outcomes), encoding="utf-8", newline="\n"
+    )
+    with (out_dir / "results.jsonl").open("w", encoding="utf-8", newline="\n") as handle:
         for o in outcomes:
             line = {
                 "id": o.case.id,
@@ -638,7 +641,9 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         rescored = rescore(args.rescore)
         (args.rescore / "rescored.json").write_text(
-            json.dumps(rescored, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+            json.dumps(rescored, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+            newline="\n",
         )
         print("\n".join(fact_check_lines(rescored["fact_checks"])))
         return 0

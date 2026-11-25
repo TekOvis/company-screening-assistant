@@ -1,6 +1,8 @@
 # Saved evaluation runs
 
-Runs that are worth keeping, copied unchanged from `eval/runs/` (which is git-ignored).
+Runs that are worth keeping, copied from `eval/runs/` (which is git-ignored). The content
+is unchanged. The one exception is line endings: the runner wrote CRLF on Windows, and
+Git stores LF (`.gitattributes`). Since then the runner writes LF on every OS.
 Each folder contains:
 - `report.md`, `report.json` and `results.jsonl`, as the runner wrote them;
 - `rescored.json`, metrics computed later from `results.jsonl` with
@@ -22,5 +24,5 @@ charge" and "not an actual charge". The correct statement is:
 > Actual billing is not confirmed by this report.
 
 `apiKeySource: none` in the logs helps diagnose which credentials were used. It does not
-prove that no paid extra usage occurred. The files themselves are left unchanged, so the
+prove that no paid extra usage occurred. The files' content is left as written, so the
 original output stays verifiable.
