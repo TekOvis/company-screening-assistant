@@ -143,7 +143,7 @@ def main() -> None:
         "written for this project. No third-party images, fonts or datasets are included.",
         "",
     ]
-    NOTICES_FILE.write_text("\n".join(lines), encoding="utf-8")
+    NOTICES_FILE.write_text("\n".join(lines), encoding="utf-8", newline="\n")
     print(f"{len(rows)} packages listed in {NOTICES_FILE.name}")
 
 
