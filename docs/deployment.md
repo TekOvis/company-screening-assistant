@@ -1,8 +1,10 @@
 # Deploying the demo
 
-**Status (2026-11-25, 19:35 UTC):** the mock demo is live at
-<https://screener.rustwatchtower.net>, release `9c3079ed1570`. An access token is
-required. See [Activation record](#activation-record-2026-11-25).
+**Status (2026-11-25, 21:14 UTC):** the mock demo is live at
+<https://screener.rustwatchtower.net>, release `7804bc4373aa`, with an external health
+check every minute. An access token is required. See
+[Activation record](#activation-record-2026-11-25) and
+[Update: health check](#update-health-check-2026-11-25-2112-utc).
 - It runs as a **mock-mode** service on a small VPS shared with another service, without
   Docker. See [Shared VPS without Docker](#shared-vps-without-docker-planned-first-demo).
 - The Dockerfile route below is kept for other hosts. The image has not been built yet,
@@ -35,6 +37,8 @@ managed by systemd behind Caddy.
 | `screener.caddy` | the Caddy site block for `screener.rustwatchtower.net`, with a 64 KB request body limit |
 | `requirements.txt` | runtime packages pinned with hashes, exported from `uv.lock` (`uv export --frozen --no-dev --no-emit-project`) |
 | `install.sh` | prepares everything **without activating** it (below) |
+| `healthcheck.sh`, `company-screener-health.service`, `company-screener-health.timer` | external health check every minute (see [Health check](#health-check)) |
+| `caddy-detach.sh` | removes only the screener block from the current Caddyfile, validates, reloads (see [Rollback](#rollback)) |
 
 **Limits on the job.**
 - **Size:** at most 10 URLs per screening; pages up to 1 MB (`FETCH_MAX_BYTES`); 15,000
@@ -62,16 +66,43 @@ peak memory and CPU time.
 | 0.5 MB | 1 | 2 | 122 MB | 23 s |
 
 The process starts at about 95 MB (interpreter, imports, app). What the numbers show:
-- **Memory** hardly depends on parallelism. HTML parsing runs synchronously in the event
-  loop, so pages are parsed one at a time.
+- **Memory** hardly depends on parallelism: pages are parsed one at a time.
 - **CPU is the larger cost.** A maximum job keeps one core busy for close to a minute on
   the development machine. The CPU times vary between runs on that machine.
-- **Responsiveness.** While a large page is parsed (about 1 s), the screener itself does
-  not answer other requests. This does not block other services, but it does make the
-  demo less responsive. Moving parsing to a worker thread is a possible later
-  improvement.
+- **Responsiveness.** These runs parsed HTML in the event loop. While a large page was
+  parsed, the screener answered nothing else. That was later measured and changed (next
+  section).
 
 These are measurements on another OS and machine. The server check below repeats them.
+
+### `/healthz` during the largest job (local, 2026-11-25)
+
+Before adding an external health check with a 5 s timeout, `/healthz` was timed during
+the largest job with 1 MB pages.
+- The app ran under uvicorn on loopback.
+- A separate thread asked `/healthz` over HTTP about once a second, like an external
+  check.
+- The synthetic fetcher waits 50 ms per page, like a fast network. Without any wait, a
+  first version of the script never let the event loop answer: one check took 34 s,
+  which overstates the problem.
+
+| Parsing | `/healthz` median | max | checks over 5 s | Peak memory | CPU time |
+|---|---|---|---|---|---|
+| in the event loop (before) | 4.73 s | 7.13 s | 5 of 12 | 139 MB | 49.9 s |
+| two worker threads (tried) | 0.57 s | 0.99 s | 0 of 47 | 155 MB | 45.7 s |
+| **one parser thread (now)** | **0.33 s** | **0.77 s** | **0 of 53** | **142 MB** | 50.1 s |
+
+With parsing in the event loop, the health check would have restarted the service in
+the middle of an ordinary large job. On the server (slower CPU, `CPUQuota=50%`) the delays
+would be longer still. Parsing now runs in one dedicated thread:
+- One thread, not more: parsing is CPU-bound Python, so more threads are not faster (the
+  GIL) but hold more pages in memory and slow the event loop down more.
+- If a time limit fires, a page waiting for the parser is dropped. A page being parsed is
+  finished, and the result is discarded.
+
+**Not measured on the server.** The server is slower and limited to 50% of a core. If its
+delays were a few times the local maximum of 0.77 s, they would still stay below 5 s.
+That is an estimate, not a measurement.
 
 ### Load check on the server (2026-11-25, 19:12–19:21 UTC)
 
@@ -135,12 +166,23 @@ service exceeds it, the kernel kills this service only, and systemd restarts it.
   error. Tests cover a site that never answers, the JSON API and an internal error.
 - **Per page:** fetching has its own connect, read and total timeouts.
 
-These bounds do not cover a blocked event loop, for example a pathological page that keeps
-the HTML parser busy. Then the time limit cannot fire, `/healthz` stops answering, and
-neither `Restart=on-failure` nor `MemoryMax` notices it. Catching that would need an
-external health check that restarts the service. It is not set up yet.
+These bounds do not cover a blocked event loop. Then the time limit cannot fire,
+`/healthz` stops answering, and neither `Restart=on-failure` nor `MemoryMax` notices it.
+The [health check](#health-check) covers that case.
 
-If the slower HTTPS during a large job is not acceptable, there are three options:
+What the health check does **not** cover:
+- **A slow page in the parser thread.** The event loop stays free, so `/healthz` keeps
+  answering and nothing is restarted. Later pages wait for the parser, and screenings
+  end through the fetch and run time limits with errors rather than hang. Pages are
+  capped at 1 MB, which makes this less likely, but it is not excluded.
+- **Wrong answers.** `/healthz` only shows that the app answers, not that screenings
+  work.
+
+**Decision (2026-11-25): keep `CPUQuota=50%` and `FETCH_MAX_BYTES=1000000` for now.**
+About 77 ms more on the other site's HTTPS during a maximum job is acceptable for this
+demo. A lower quota would stretch each job. Ordinary use is to be watched first.
+
+If the slower HTTPS during a large job becomes a problem, there are three options:
 - lower `CPUQuota`, so jobs take longer but leave more of the core free;
 - lower `FETCH_MAX_BYTES`: at 0.5 MB, local CPU time per job roughly halved;
 - allow fewer URLs per screening.
@@ -149,8 +191,30 @@ These limits reduce the effect on the other service, but **do not exclude it**:
 - the disk, the network, the page cache, the kernel and the single CPU core stay shared;
 - even capped at 50%, a long job competes for the core and its caches.
 
-The next step is a check under load on the server, while watching the other service's
-response times.
+### Health check
+
+`company-screener-health.timer` runs `/opt/company-screener/bin/healthcheck.sh` every
+minute, as a short root service with a hardened sandbox. The rules:
+- **Only a running service.** If `company-screener` is stopped, failed or (re)starting,
+  the check does nothing and forgets earlier failures. The restart command is
+  `systemctl try-restart`, which never starts a stopped service, so a demo stopped on
+  purpose stays stopped. The check unit has no `Wants=`/`Requires=` on the demo.
+- **The check.** `GET http://127.0.0.1:8001/healthz` with a 5 s timeout.
+- **When to restart.** After 3 failed checks in a row of the same service instance; a
+  manual restart starts the count again.
+- **No endless loop.**
+  - The check restarts at most 3 times within an hour. After that it logs once that it
+    gives up and does not restart again until the service answers (after a manual fix).
+  - The app unit itself has `StartLimitIntervalSec=600` and `StartLimitBurst=5`: after 5
+    starts within 10 minutes (crashes, the check, manual restarts) systemd leaves it
+    failed. To start it again: `systemctl reset-failed company-screener`, then
+    `systemctl start company-screener`.
+- **Journal.** Healthy checks are not logged, and the routine start and finish lines are
+  filtered out (`LogLevelMax=notice`). Failures with curl's reason, restarts, giving up
+  and recovery are logged: `journalctl -u company-screener-health`.
+
+The script lives outside the releases (`/opt/company-screener/bin`), so switching or
+removing a release never breaks it. `install.sh` updates it with each release.
 
 ### Install without activating
 
@@ -159,11 +223,15 @@ response times.
 - unpacks one commit into `/opt/company-screener/releases/<commit>` with its own venv;
 - writes `/etc/company-screener/screener.env` once (mode 600, random token, never
   printed);
-- installs the unit and checks it with `systemd-analyze verify`;
+- installs the app unit, the health check unit and timer, and the health check script,
+  and checks the units with `systemd-analyze verify`;
+- backs up the previous units, script and release pointer to
+  `/var/backups/company-screener/<time>/`;
 - validates the settings and imports the app as the service user.
 
-It does **not** enable or start the service, touch DNS, or edit or reload Caddy. A test
-checks that the script contains no such command.
+It does **not** enable or start the service or the timer, touch DNS, or edit or reload
+Caddy. A test checks that the script contains no such command. A running service keeps
+the previous release in memory until `systemctl restart company-screener`.
 
 ```bash
 # on the development machine
@@ -212,15 +280,57 @@ sudo bash /tmp/deploy/install.sh /root/screener-<commit>.tar.gz <commit>
    - An example runs.
    - The other site still answers as before.
    - `systemctl show company-screener -p MemoryPeak` stays well below the limit.
+6. **Health check.** One manual run (silent when healthy), then the timer:
+
+   ```bash
+   systemctl start company-screener-health.service
+   systemctl enable --now company-screener-health.timer
+   systemctl list-timers company-screener-health.timer
+   ```
 
 ### Rollback
 
+An ordinary rollback undoes one layer and leaves everything else in place.
+
 | Undo | Commands |
 |---|---|
-| Caddy | `cp -a /etc/caddy/Caddyfile.bak-<time> /etc/caddy/Caddyfile`, validate as the caddy user, `systemctl reload caddy` |
-| Service | `systemctl disable --now company-screener` |
-| Release | point `/opt/company-screener/current` at the previous release (`ln -sfn … current.new && mv -T current.new current`), then `systemctl restart company-screener` |
-| Everything | stop and disable the service; remove the unit and `systemctl daemon-reload`; `rm -rf /opt/company-screener /etc/company-screener`; `userdel screener`; remove the DNS record |
+| **Release**, back to the previous one | `ln -sfn /opt/company-screener/releases/<previous> /opt/company-screener/current.new && mv -T /opt/company-screener/current.new /opt/company-screener/current`, then `systemctl restart company-screener` and `curl -fsS http://127.0.0.1:8001/healthz`. The units and the health check script stay those of the newer install; check that its `ExecStart` fits the older release |
+| **Stop the demo** | `systemctl disable --now company-screener`. The health check leaves a stopped service alone |
+| **Health check only** | `systemctl disable --now company-screener-health.timer` |
+| **Caddy** | `bash <release>/deploy/caddy-detach.sh --dry-run`, read the change, then run it without `--dry-run`. See below |
+
+**Caddy: remove only the screener block.** `caddy-detach.sh` (in releases from
+`7804bc4373aa` on):
+- edits the current `/etc/caddy/Caddyfile` and removes only the
+  `screener.rustwatchtower.net` block and its comment lines;
+- refuses to change anything unless it finds exactly one such block;
+- validates the result as the caddy user and keeps a copy of the previous file
+  (`/etc/caddy/Caddyfile.bak-<time>`);
+- reloads, and puts the previous file back if the reload fails.
+
+A saved copy of the whole Caddyfile also holds the other sites as they were then.
+Restoring it would undo any later change to them. Use such a copy only as a last resort,
+after `diff` shows that nothing else has changed since.
+
+#### Removing the demo completely
+
+This is **not** a rollback. It deletes the demo, its settings (including the access
+token) and, if wanted, its backups. Do it only on an explicit decision.
+
+```bash
+bash /opt/company-screener/releases/<release>/deploy/caddy-detach.sh   # first, while the script exists
+systemctl disable --now company-screener-health.timer company-screener
+rm /etc/systemd/system/company-screener.service \
+   /etc/systemd/system/company-screener-health.service \
+   /etc/systemd/system/company-screener-health.timer
+systemctl daemon-reload
+rm -rf /opt/company-screener /etc/company-screener /var/lib/company-screener-health
+userdel screener
+# only if the backups and install archives are no longer wanted:
+rm -rf /var/backups/company-screener
+rm /root/screener-*.tar.gz
+# finally, delete the A record "screener" at the DNS provider
+```
 
 ### Activation record (2026-11-25)
 
@@ -230,9 +340,9 @@ sudo bash /tmp/deploy/install.sh /root/screener-<commit>.tar.gz <commit>
   `203/EXEC`: `install.sh` had built the venv in a temporary directory and moved it, so
   `venv/bin/uvicorn` pointed at a missing interpreter.
 - `9c3079ed1570` fixed this. It builds the venv in place, starts the app with
-  `python -m uvicorn`, and `install.sh` checks that command. The service runs this release.
-- The two older releases have the same venv problem. They would start only with the
-  current unit.
+  `python -m uvicorn`, and `install.sh` checks that command. The service ran this release
+  until the [update](#update-health-check-2026-11-25-2112-utc).
+- The two older releases had the same venv problem. They were removed in that update.
 
 **Checks** (all passed):
 - **Loopback.**
@@ -283,11 +393,77 @@ This was not a maximum job.
 
 | What | Where / how |
 |---|---|
-| Caddyfile before the change | `/var/backups/company-screener/caddy-20261125T193136Z/Caddyfile`, also `/etc/caddy/Caddyfile.bak-20261125T193136Z` |
-| Undo Caddy | `cp -a /var/backups/company-screener/caddy-20261125T193136Z/Caddyfile /etc/caddy/Caddyfile`, then `runuser -u caddy -- caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`, then `systemctl reload caddy` |
-| Units and release pointers before each install | `/var/backups/company-screener/20261125T192759Z/` (unit with `MemoryHigh`, pointer `d9285ddfbf92`) and `…/20261125T193045Z/` (unit of `9f78dd0d9af9`, pointer `9f78dd0d9af9`). Both units use `venv/bin/uvicorn` and would fail with `203/EXEC`, so restore them only for reference |
+| Caddyfile before the change | `/var/backups/company-screener/caddy-20261125T193136Z/Caddyfile`, also `/etc/caddy/Caddyfile.bak-20261125T193136Z`. Kept as history; to undo Caddy, use `caddy-detach.sh` ([Rollback](#rollback)), not these copies |
+| Units and release pointers before each install | `/var/backups/company-screener/20261125T192759Z/` (unit with `MemoryHigh`, pointer `d9285ddfbf92`) and `…/20261125T193045Z/` (unit of `9f78dd0d9af9`, pointer `9f78dd0d9af9`). Both units use `venv/bin/uvicorn` and would fail with `203/EXEC`, and both releases they point to have since been removed: history only |
 | Stop the demo | `systemctl disable --now company-screener` |
-| Remove everything | stop and disable the service, `rm /etc/systemd/system/company-screener.service`, `systemctl daemon-reload`, `rm -rf /opt/company-screener /etc/company-screener /var/backups/company-screener`, `userdel screener`, `rm /root/screener-*.tar.gz`, undo Caddy as above, delete the DNS record |
+| Remove everything | a separate operation, not a rollback: [Removing the demo completely](#removing-the-demo-completely) |
+
+### Update: health check (2026-11-25, 21:12 UTC)
+
+**What changed:** release `7804bc4373aa` (commits `ff7a7c4` and `7804bc4`):
+- HTML parsing in one parser thread (see
+  [`/healthz` during the largest job](#healthz-during-the-largest-job-local-2026-11-25));
+- the [health check](#health-check): script, unit and timer;
+- `StartLimitIntervalSec=600` and `StartLimitBurst=5` on the app unit;
+- `caddy-detach.sh` for rolling back Caddy.
+
+**Steps and checks** (all passed):
+- **Install.** `install.sh` backed up the unit and the release pointer of `9c3079ed1570`
+  to `/var/backups/company-screener/20261125T211228Z/`; the health check files did not
+  exist before. Settings: mock, no API key. The app imports as the service user.
+- **Restart onto the new release** at 21:12:34 UTC.
+  - `/healthz` answered with the mock backend.
+  - The process uses files from `7804bc4373aa` only.
+  - systemd shows the start limit of 5 per 10 minutes.
+- **Smoke test.**
+  - Without the token, `/` redirects to `/login`.
+  - Example 03 gave `non_fit`, as expected.
+  - `https://screener.rustwatchtower.net/healthz` answered 200.
+- **Health check logic, tested on a dummy unit, not on the demo.** A copy of the check
+  unit with its own state directory watched a transient `sleep` unit, against a closed
+  port:
+  - runs 3, 6 and 9 restarted the dummy (3 failed checks in a row each, counted per
+    instance);
+  - run 12 gave up with one error line, and run 13 did nothing;
+  - pointed at the real `/healthz`, the next run logged the recovery and allowed restarts
+    again;
+  - with the dummy stopped, 4 failing checks did nothing: it stayed stopped, and no
+    failure was counted;
+  - only the script's own lines reached the journal, without routine start and finish
+    lines, at the intended levels: 1 error (giving up), 16 warnings (12 failures,
+    3 restarts, giving up), 1 notice (recovery);
+  - the test unit, the dummy and the test state were removed afterwards.
+- **The real check.** One manual run succeeded and logged nothing. After the timer was
+  enabled, it ran every minute from 21:14 UTC, each run ended with status 0, the journal
+  stayed empty, and no failure was recorded (checked at 21:16 UTC).
+- **Caddy rollback, dry run on the real Caddyfile.** `caddy-detach.sh --dry-run` would
+  remove exactly the screener block (lines 31–47). The rest validated as the caddy user,
+  the Caddyfile stayed unchanged, and no root-owned file appeared in `/var/log/caddy`.
+- **Neighbours.** Rust Watchtower's API and site, and the German trainer site, answered
+  200. All services were active.
+- **Memory** after the restart and one example: `MemoryCurrent` 86.7 MB, `MemoryPeak`
+  86.9 MB. This was not a large job.
+
+**Removed releases.** First it was checked that `d9285ddfbf92` and `9f78dd0d9af9`:
+- are not `current`;
+- are not named in any unit;
+- have no symbolic link pointing at them;
+- are used by no process.
+
+Then the two release directories (81 MB each) and their install archives in `/root` were
+removed. Kept: release `7804bc4373aa` (current), release `9c3079ed1570` (the rollback
+target), their archives, all backups, the settings and Caddy. The unit backups in
+`20261125T192759Z` and `20261125T193045Z` still name the removed releases in
+`previous-current.txt`. They are history only.
+
+**Rolling back this update.**
+- **Release:** back to `9c3079ed1570` with the symbolic link and a restart. Its
+  `ExecStart` matches the current unit. That release parses HTML in the event loop, so
+  the health check could restart the service during a large job. Disable the timer as
+  well in that case.
+- **Health check only:** `systemctl disable --now company-screener-health.timer`.
+- **Caddy:** `bash /opt/company-screener/releases/7804bc4373aa/deploy/caddy-detach.sh`,
+  with `--dry-run` first.
 
 ## Docker route (other hosts)
 
