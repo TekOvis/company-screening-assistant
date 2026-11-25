@@ -1,0 +1,32 @@
+{
+  "id": "13-software-nonfit-trade-fair",
+  "synthetic": true,
+  "description": "French software company that exhibits at a trade fair in Germany: the fair is not a location.",
+  "tags": ["geography-mismatch", "trade-fair-trap"],
+  "criteria": {
+    "industry": "B2B software",
+    "geography": "DACH (Germany, Austria, Switzerland)",
+    "target_business": "Developer of software products for manufacturing companies",
+    "exclusions": null
+  },
+  "start_url": "https://coastal-metrics.example/",
+  "pages": {
+    "https://coastal-metrics.example/": {
+      "html": [
+        "<html><head><title>Coastal Metrics | Machine monitoring</title></head><body>",
+        "<p>Coastal Metrics develops machine monitoring software for plastics manufacturers.</p>",
+        "<p>Coastal Metrics is headquartered in Lyon, France.</p>",
+        "<p>Meet us at the SPS trade fair in Nuremberg, Germany, in November.</p>",
+        "</body></html>"
+      ]
+    }
+  },
+  "expected": {
+    "fit": "non_fit",
+    "company_name": ["Coastal Metrics"],
+    "company_locations": [["Lyon"], ["France"]],
+    "forbidden_locations": ["Nuremberg", "Germany"],
+    "markets_served": []
+  },
+  "label_rationale": "Software for manufacturers (industry and target business met), headquartered in Lyon, France (geography not met). The trade fair in Nuremberg is an event, not a company location."
+}

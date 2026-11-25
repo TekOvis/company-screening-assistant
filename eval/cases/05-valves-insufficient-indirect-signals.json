@@ -1,0 +1,40 @@
+{
+  "id": "05-valves-insufficient-indirect-signals",
+  "synthetic": true,
+  "description": "Valve manufacturer with only indirect location signals: phone code, time zone, currency, a German page name.",
+  "tags": ["indirect-signals"],
+  "criteria": {
+    "industry": "industrial valves",
+    "geography": "Germany",
+    "target_business": "Manufacturer of industrial valves or other flow-control equipment",
+    "exclusions": "pure distributors or resellers; companies owned by private equity firms"
+  },
+  "start_url": "https://rheinfeld-ventil.example/",
+  "pages": {
+    "https://rheinfeld-ventil.example/": {
+      "html": [
+        "<html><head><title>Rheinfeld Ventiltechnik | Safety valves</title></head><body>",
+        "<nav><a href='/impressum'>Impressum</a></nav>",
+        "<p>Rheinfeld Ventiltechnik builds spring-loaded safety valves for boilers and pressure vessels.</p>",
+        "<p>Hotline: +49 211 5550 987 (Mon-Fri, 8:00-17:00 CET). All prices in EUR plus VAT.</p>",
+        "</body></html>"
+      ]
+    },
+    "https://rheinfeld-ventil.example/impressum": {
+      "html": [
+        "<html><head><title>Impressum</title></head><body>",
+        "<p>Responsible for content: the management of Rheinfeld Ventiltechnik.</p>",
+        "<p>Contact: info@rheinfeld-ventil.example</p>",
+        "</body></html>"
+      ]
+    }
+  },
+  "expected": {
+    "fit": "insufficient_information",
+    "company_name": ["Rheinfeld Ventiltechnik"],
+    "company_locations": [],
+    "forbidden_locations": ["Germany", "Düsseldorf", "Dusseldorf"],
+    "markets_served": []
+  },
+  "label_rationale": "Builds safety valves (industry and target business met). No page states where the company is located; the +49 211 phone number, CET, EUR and the German page name are indirect signals only. Geography is unknown."
+}

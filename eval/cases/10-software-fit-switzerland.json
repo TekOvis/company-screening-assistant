@@ -1,0 +1,32 @@
+{
+  "id": "10-software-fit-switzerland",
+  "synthetic": true,
+  "description": "Swiss developer of production-planning software; DACH includes Switzerland.",
+  "tags": ["region-criteria"],
+  "criteria": {
+    "industry": "B2B software",
+    "geography": "DACH (Germany, Austria, Switzerland)",
+    "target_business": "Developer of software products for manufacturing companies",
+    "exclusions": null
+  },
+  "start_url": "https://linthal-software.example/",
+  "pages": {
+    "https://linthal-software.example/": {
+      "html": [
+        "<html><head><title>Linthal Software AG | Production planning</title></head><body>",
+        "<nav><a href='/product'>Product</a> <a href='/about'>About</a></nav>",
+        "<p>Linthal Software AG develops LinthalPlan, a production planning and scheduling system (MES) for mid-sized manufacturers.</p>",
+        "<p>Our office is in Zug, Switzerland.</p>",
+        "</body></html>"
+      ]
+    }
+  },
+  "expected": {
+    "fit": "fit",
+    "company_name": ["Linthal Software"],
+    "company_locations": [["Zug"], ["Switzerland"]],
+    "forbidden_locations": [],
+    "markets_served": []
+  },
+  "label_rationale": "Develops production-planning software for manufacturers (industry and target business met); office in Zug, Switzerland, which is in DACH (geography met)."
+}

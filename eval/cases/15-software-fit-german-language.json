@@ -1,0 +1,31 @@
+{
+  "id": "15-software-fit-german-language",
+  "synthetic": true,
+  "description": "German-language website of a production-planning software company in Germany; criteria are in English.",
+  "tags": ["non-english", "region-criteria"],
+  "criteria": {
+    "industry": "B2B software",
+    "geography": "DACH (Germany, Austria, Switzerland)",
+    "target_business": "Developer of software products for manufacturing companies",
+    "exclusions": null
+  },
+  "start_url": "https://werkbank-software.example/",
+  "pages": {
+    "https://werkbank-software.example/": {
+      "html": [
+        "<html lang='de'><head><title>Werkbank Software GmbH | Fertigungsplanung</title></head><body>",
+        "<p>Die Werkbank Software GmbH entwickelt Software für die Fertigungsplanung in mittelständischen Industriebetrieben.</p>",
+        "<p>Unser Sitz ist in Freiburg im Breisgau, Deutschland.</p>",
+        "</body></html>"
+      ]
+    }
+  },
+  "expected": {
+    "fit": "fit",
+    "company_name": ["Werkbank Software"],
+    "company_locations": [["Freiburg"], ["Deutschland", "Germany"]],
+    "forbidden_locations": [],
+    "markets_served": []
+  },
+  "label_rationale": "Develops production-planning software for industrial companies (industry and target business met); registered office ('Sitz') in Freiburg im Breisgau, Germany (geography met)."
+}

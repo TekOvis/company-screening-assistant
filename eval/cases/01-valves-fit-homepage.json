@@ -1,0 +1,35 @@
+{
+  "id": "01-valves-fit-homepage",
+  "synthetic": true,
+  "description": "Valve manufacturer; every fact needed is on the homepage.",
+  "tags": ["homepage-only"],
+  "criteria": {
+    "industry": "industrial valves",
+    "geography": "Germany",
+    "target_business": "Manufacturer of industrial valves or other flow-control equipment",
+    "exclusions": "pure distributors or resellers; companies owned by private equity firms"
+  },
+  "start_url": "https://brightwater-valves.example/",
+  "pages": {
+    "https://brightwater-valves.example/": {
+      "html": [
+        "<html><head><title>Brightwater Valve Works | Butterfly and ball valves</title>",
+        "<meta name='description' content='Butterfly and ball valves for the chemical industry.'></head><body>",
+        "<nav><a href='/products'>Products</a> <a href='/contact'>Contact</a></nav>",
+        "<h1>Brightwater Valve Works</h1>",
+        "<p>Brightwater Valve Works designs and manufactures butterfly and ball valves for chemical plants and refineries.</p>",
+        "<p>Our headquarters and production site are in Dortmund, Germany.</p>",
+        "<p>All valves are pressure-tested before delivery.</p>",
+        "</body></html>"
+      ]
+    }
+  },
+  "expected": {
+    "fit": "fit",
+    "company_name": ["Brightwater Valve Works"],
+    "company_locations": [["Dortmund"], ["Germany"]],
+    "forbidden_locations": [],
+    "markets_served": []
+  },
+  "label_rationale": "Designs and manufactures industrial valves (industry and target business met); headquarters and production in Dortmund, Germany (geography met); nothing indicates a distributor or private-equity ownership."
+}

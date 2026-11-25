@@ -1,0 +1,33 @@
+{
+  "id": "19-bakery-insufficient-missing-pages",
+  "synthetic": true,
+  "description": "Packaged-bread producer; the About and Contact pages return 404 and the location is never stated.",
+  "tags": ["missing-pages"],
+  "criteria": {
+    "industry": "food production",
+    "geography": "Poland",
+    "target_business": "Producer of packaged bakery products for supermarket chains",
+    "exclusions": "businesses that only sell through their own retail shops"
+  },
+  "start_url": "https://piekarnia-wisla.example/",
+  "pages": {
+    "https://piekarnia-wisla.example/": {
+      "html": [
+        "<html><head><title>Piekarnia Wisła | Rye bread and crackers</title></head><body>",
+        "<nav><a href='/about'>About us</a> <a href='/contact'>Contact</a></nav>",
+        "<p>Piekarnia Wisła makes packaged rye bread and crackers for supermarket chains.</p>",
+        "</body></html>"
+      ]
+    },
+    "https://piekarnia-wisla.example/about": {"status": 404},
+    "https://piekarnia-wisla.example/contact": {"status": 404}
+  },
+  "expected": {
+    "fit": "insufficient_information",
+    "company_name": ["Piekarnia Wisła", "Piekarnia Wisla"],
+    "company_locations": [],
+    "forbidden_locations": ["Poland"],
+    "markets_served": []
+  },
+  "label_rationale": "Industry and target business are met, but no available page states where the company is located (the Polish name is only an indirect signal), so geography is unknown."
+}
