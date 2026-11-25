@@ -76,8 +76,8 @@
       <td>{{ r.industry or "—" }}</td>
       <td>{{ r.company_locations|join("; ") if r.company_locations else "—" }}</td>
       <td>{{ r.markets_served|join("; ") if r.markets_served else "—" }}</td>
-      <td>{{ r.description or "—" }}</td>
-      <td>
+      <td class="col-description">{{ r.description or "—" }}</td>
+      <td class="col-evidence">
         {% if r.evidence %}
         <details>
           <summary>{{ r.evidence|length }} quote{{ "s" if r.evidence|length != 1 }}</summary>

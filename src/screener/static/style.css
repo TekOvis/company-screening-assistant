@@ -14,7 +14,7 @@
 }
 
 body { margin: 0; }
-main { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+main { max-width: 1600px; margin: 0 auto; padding: 1.5rem; }
 h1 { font-size: 1.6rem; margin-top: 0; }
 a { color: var(--accent); }
 
@@ -27,7 +27,7 @@ a { color: var(--accent); }
 .mode-mock { background: #fff4d6; color: #6b4b00; border: 1px solid #e8cf86; }
 .mode-live { background: #e7f0ff; color: #163f80; border: 1px solid #b8cdf3; }
 
-.site-footer { max-width: 1200px; margin: 0 auto; padding: 1rem 1.5rem 2rem; color: var(--muted); font-size: 0.85rem; }
+.site-footer { max-width: 1600px; margin: 0 auto; padding: 1rem 1.5rem 2rem; color: var(--muted); font-size: 0.85rem; }
 
 .lead { color: var(--muted); max-width: 70ch; }
 .hint { color: var(--muted); font-size: 0.85rem; font-weight: normal; }
@@ -59,6 +59,8 @@ table.results { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
 .results th { background: #f0f2f6; position: sticky; top: 0; }
 .results td { min-width: 7rem; }
 .results td:first-child { min-width: auto; }
+.results td.col-description { min-width: 14rem; }
+.results td.col-evidence { min-width: 24rem; }
 
 .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px; font-weight: 600; font-size: 0.8rem; white-space: nowrap; }
 .badge-fit { background: #e3f4e8; color: var(--fit); }
