@@ -20,7 +20,8 @@ EnvironmentFile=/etc/company-screener/screener.env
 Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 # Loopback only: Caddy on the same host is the only client. X-Forwarded-For is trusted
 # only from 127.0.0.1, so the per-IP limits see the real client address.
-ExecStart=/opt/company-screener/current/venv/bin/uvicorn screener.web:create_app --factory \
+# "python -m uvicorn", not venv/bin/uvicorn: it does not depend on script shebang paths.
+ExecStart=/opt/company-screener/current/venv/bin/python -m uvicorn screener.web:create_app --factory \
     --app-dir /opt/company-screener/current/src \
     --host 127.0.0.1 --port 8001 \
     --proxy-headers --forwarded-allow-ips 127.0.0.1 \

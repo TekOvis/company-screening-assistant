@@ -55,6 +55,15 @@ def test_unit_has_resource_limits_and_runs_unprivileged():
     assert not re.search(r"^MemoryHigh=", unit, re.MULTILINE)
 
 
+def test_the_venv_is_never_moved_and_the_service_does_not_rely_on_its_scripts():
+    """A first install failed with 203/EXEC: the venv was built in a temporary directory
+    and moved, which left venv/bin/uvicorn pointing at a missing interpreter."""
+    install, unit = _read("install.sh"), _read("company-screener.service")
+    assert ".partial" not in install and not re.search(r"^\s*mv .*RELEASE", install, re.M)
+    assert 'python3 -m venv "$RELEASE/venv"' in install
+    assert "ExecStart=/opt/company-screener/current/venv/bin/python -m uvicorn " in unit
+
+
 def test_install_script_activates_nothing():
     commands = [
         line.strip()

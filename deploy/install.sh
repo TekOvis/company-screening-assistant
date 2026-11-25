@@ -38,17 +38,18 @@ id screener >/dev/null 2>&1 \
 install -d -m 755 -o root -g root "$BASE" "$BASE/releases"
 
 echo "== release $COMMIT"
-TMP="$RELEASE.partial"
-rm -rf "$TMP"
-install -d -m 755 "$TMP"
-tar -xzf "$BUNDLE" -C "$TMP"
-python3 -m venv "$TMP/venv"
-"$TMP/venv/bin/pip" install --quiet --disable-pip-version-check --no-cache-dir \
-    --require-hashes --only-binary :all: --no-deps -r "$TMP/deploy/requirements.txt"
-"$TMP/venv/bin/python" -m compileall -q "$TMP/src"
-chown -R root:root "$TMP"
-chmod -R go-w "$TMP"
-mv "$TMP" "$RELEASE"
+# Built in place: a venv is not relocatable (its scripts hold absolute interpreter paths),
+# so it must never be moved after creation. A failed build is removed.
+install -d -m 755 "$RELEASE"
+trap 'echo "install failed; removing $RELEASE" >&2; rm -rf "$RELEASE"' ERR
+tar -xzf "$BUNDLE" -C "$RELEASE"
+python3 -m venv "$RELEASE/venv"
+"$RELEASE/venv/bin/python" -m pip install --quiet --disable-pip-version-check --no-cache-dir \
+    --require-hashes --only-binary :all: --no-deps -r "$RELEASE/deploy/requirements.txt"
+"$RELEASE/venv/bin/python" -m compileall -q "$RELEASE/src"
+chown -R root:root "$RELEASE"
+chmod -R go-w "$RELEASE"
+trap - ERR
 
 echo "== settings file (created once, never overwritten)"
 install -d -m 700 -o root -g root "$ETC"
@@ -104,6 +105,8 @@ from screener.examples import load_examples
 import screener.web
 print("import ok; examples:", len(load_examples()))
 '
+# The exact interpreter and module the unit's ExecStart uses.
+runuser -u screener -- "$BASE/current/venv/bin/python" -m uvicorn --version
 echo "service enabled: $(systemctl is-enabled company-screener 2>/dev/null || true)"
 echo "service active:  $(systemctl is-active company-screener 2>/dev/null || true)"
 echo "Done. Nothing was activated: no DNS change, service not started, Caddy untouched."
