@@ -172,8 +172,9 @@ rules did not. Both runs are kept unchanged in [`eval/results/`](../eval/results
 - **Scoring:** against the labels of 2026-11-25.
 
 The tables below keep that original scoring unchanged. In both runs the model answered
-`non_fit` for cases 03, 12 and 13, with geography `not_met`, as that prompt said. No run
-with the agreed rule (`87084cc`) has been made yet.
+`non_fit` for cases 03, 12 and 13, with geography `not_met`, as that prompt said. A run
+with the agreed rule followed on 2026-11-26: see
+[run 3](#full-set-through-claude-code-agreed-geography-rule-2026-11-26).
 
 **Recomputed on 2026-11-26, separately from the original scoring.** The same saved
 answers, without a new run, against the current labels. The model's answers are still
@@ -286,6 +287,78 @@ real company websites. The runs show only two things:
 The set is too small and too easy to tell good settings from better ones. Harder cases,
 written or reviewed by someone else, are the next step.
 
+### Full set through Claude Code, agreed geography rule (2026-11-26)
+
+One full run (run 3) after the label change and the geography rule change. It was
+approved by the project owner after they stated that paid extra usage was turned off; the
+tool cannot check that. No case was rerun, and nothing was changed after seeing the
+results. The files are kept unchanged in
+[`eval/results/20261126T003138Z-claude-code`](../eval/results/20261126T003138Z-claude-code).
+
+| Setup | |
+|---|---|
+| Backend | `claude_code`: Claude Code through the subscription login (`claude-agent-sdk` 0.2.188) |
+| Model and effort | `claude-sonnet-5-5`, effort `low` |
+| Code | commit `25cd0a6`; application source sha256 `2a20965df56e`, the same as `87084cc` (the commit after it changed only docs) |
+| Prompts | sha256 `8c27e02cff37` (agreed geography rule) |
+| Dataset | sha256 `60a1c455b67c`: the 20 cases with the labels of 2026-11-26 (6 `fit`, 6 `non_fit`, 8 `insufficient_information`) |
+| Started | 2026-11-26 00:31:38 UTC; whole run 231 s |
+| Billing | Authorization via Claude subscription; the API-equivalent ($0.42) is given for reference only. Actual billing is not confirmed by this report |
+
+| Result | |
+|---|---|
+| Final label: accuracy / macro-F1 | **1.00 (20/20) / 1.00**; each class 1.00 |
+| Model's own label before the checks | 1.00 (20/20) / 1.00: **the same classification before and after the checks** in every case |
+| Errors (result statuses) | `ok` 20 |
+| Schema-valid final answers | 20 of 20 |
+| Company name correct / own locations exactly right / markets found | 20/20 / 20/20 / 7/7 |
+| Locations invented or taken from traps (before and after checks) | none |
+| Facts in the model's answers | 83; **the verifier rejected 4, all descriptions**; 79 in the final answers, none without a supported evidence item |
+| Evidence items | 100; all verbatim on the cited page; 96 supported by the second check, 3 not supported, 1 unclear |
+| Tool calls | 19 in 11 cases (run 2: 12 in 8) |
+| Time per case | median 11.4 s, max 15.2 s |
+| Model requests | 79, 0 failed; 3–5 per case |
+| Tokens (input / output / cache write / cache read) | 106 / 27,147 / 52,682 / 142,975 |
+
+**What 20/20 means here.**
+- It is a score on the small synthetic set that was used during development, not a
+  measure of accuracy on real company websites.
+- The set is not blind. The same assistant wrote it and the prompts. Three labels and
+  the geography rule changed after earlier runs had been seen.
+
+**What the checks did.**
+- **Four descriptions rejected** (cases 03, 09, 14, 17).
+  - In 03, 09 and 17 the description added details that the cited quote does not
+    state: a headquarters and exports, a private-equity owner, the plant's location.
+  - In 14 it presented the absence of information as a statement about the company.
+  - No label depended on them.
+- **The remaining facts were accepted by automated checks:** a verbatim quote on a fetched
+  page, plus a second LLM's agreement that the quote states the claim. That does not
+  establish that they are independently true.
+
+**Geography.**
+- In 03, 12 and 13 only sites elsewhere are named, and the model answered `unknown`.
+  Under the earlier prompt it had answered `not_met`.
+- In the 12 cases with `met`, the new check that the site lies in the target region
+  agreed every time.
+- **Negative geography (`not_met`) is not covered by this live set.** No case states that
+  a company has no site in the target region, and the model filed no `geography`
+  evidence. That path is covered only by the unit tests and the mock.
+
+**Contested exclusion in case 06** (a distributor; exclusion "pure distributors or
+resellers").
+- As evidence for the exclusion, the model cited "We do not manufacture valves ourselves;
+  we keep more than 20,000 items in stock." It did not cite the sentence that calls the
+  company a distributor.
+- The verifier rated that quote `unclear`, so the exclusion became `unknown`.
+- The label is still the expected `non_fit`, because the target business (a manufacturer)
+  was verified as not met. Here the correct label rests on one criterion, not two.
+
+**More tool calls than in run 2.** In cases 03, 12, 13, 14, 19 and 20 the model asked for
+two more pages each, which the saved sites do not have (the requested paths are not
+recorded in the results). That meant 5 requests instead of 3 in those cases; the run as a
+whole used 79 requests (run 2: 81).
+
 ## Threats to validity
 
 - Twenty short pages are far simpler and cleaner than real websites.
@@ -297,15 +370,15 @@ written or reviewed by someone else, are the next step.
 - Three labels were changed after both full model runs had been seen. The review table
   left model results out, but the set is not blind.
 - Since `87084cc` the prompt, the evidence check and the mock apply the agreed geography
-  rule. The saved Claude Code runs predate it, and no model run with it has been made
-  yet. Whether the model follows the new instructions is not measured.
-- The model is not deterministic. The 14 cases that completed in both runs got the same
-  labels both times, but tool use and request counts differed. Two runs are too few to
-  measure the variance.
+  rule. Runs 1 and 2 predate it; run 3 uses it. This set has no case for negative
+  geography (`not_met`), so the model's handling of that path is not measured.
+- The model is not deterministic. The 14 cases that completed in both runs 1 and 2 got
+  the same labels both times, but tool use and request counts differed. Three runs, with
+  changes in between, are too few to measure the variance.
 - With a perfect score, the set no longer shows differences between settings.
 - The set is no longer blind. Case 01 was used during development, all 20 cases have been
-  seen in two full runs, and the description rule was changed after looking at outputs
-  (see the change log).
+  seen in three full runs, and the description rule, three labels and the geography rule
+  were changed after looking at outputs (see the change log).
 
 ## Change log
 
@@ -329,10 +402,12 @@ such a change are not independent of development.
 | 2026-11-25 | `2629233` | Mock only: location cue words match in any case | The mock missed "Headquartered" at the start of a sentence. Not a model change |
 | 2026-11-25 | `413998b` | Evaluation runner: the budget is the per-company caps times the number of cases | Run 1 shared the web app's per-run cap and stopped after 14 cases (see Results) |
 | 2026-11-25 | `7880ef4` | Evidence check: the description may rest on quotes the model filed under "business", not only under "description". The claim text sent to the verifier now says that the quotes must state every statement in the description. The verifier prompt gained two rules: a partly stated description, or a quote that only names the company, does not support it; promotional or self-assessing wording is not an established fact. Name quotes are never used for the description | **Observed during development on case 01**, the first one-case Claude Code check: the model quoted the right sentence but filed it under business and name, so the description was removed. The project owner chose this option. It is not meant to fix the 5 descriptions removed in run 2: there the quotes stated only part of the description, and such descriptions are still rejected |
-
 | 2026-11-25 | the commit after `7880ef4` | Reports: billing wording for Claude Code; unconfirmed facts before and after the checks; code version; `--rescore` for saved runs | The old wording ("no per-token charge") claimed more than the tool can know. No effect on answers or labels |
 | 2026-11-26 | `87084cc` | **Behaviour change, geography.** Agent prompt and answer schema: `met` = a confirmed own site in the target region; `not_met` only if the text confirms there is none, with a quote under the new evidence target `geography`; sites named only elsewhere = `unknown`. Evidence check: two claims written by code with the user's region, one for each of `met` and `not_met` (see [architecture](architecture.md#evidence-verification-and-label-rules)); without a supported claim the criterion becomes `unknown`. Verifier prompt: rules for both claims. Mock: the same rule; a denied site ("no office in X") is no longer read as an own location. Prompts sha256 now `8c27e02cff37` | It implements the label rule the author agreed after the label review, as a general rule, not per case. It was made after seeing that the model, following the earlier prompt, answered `non_fit` for 03, 12 and 13. The tests use their own made-up companies; nothing depends on case ids, names or expected labels |
 
-The `7880ef4` change touches the verifier prompt, so the prompts fingerprint changes. Its effect
-on this set is **not measured yet**. It cannot be recomputed from the saved answers,
-because the verifier would have to judge description claims it never saw.
+The `7880ef4` change touches the verifier prompt, so the prompts fingerprint changes. It
+cannot be recomputed from the saved answers of runs 1 and 2, because the verifier would
+have to judge description claims it never saw. Run 3 is the first full run after it, and
+4 descriptions were rejected (run 2: 5). The geography change came at the same time and
+the model is not deterministic, so this is **not a clean measure** of the description
+change.

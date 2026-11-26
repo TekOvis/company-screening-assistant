@@ -1,0 +1,221 @@
+{
+  "mode": "claude-code",
+  "backend": "claude_code",
+  "billing": "Authorization via Claude subscription; the API-equivalent is given for reference only. Actual billing is not confirmed by this report.",
+  "notice": "CLAUDE CODE MODE: the real model through your Claude Code login. Authorization via Claude subscription; the API-equivalent is given for reference only. Actual billing is not confirmed by this report. The numbers describe this small synthetic set of invented companies only; they are not evidence of accuracy on real company websites.",
+  "app_version": "0.1.0",
+  "code": {
+    "git_commit": "25cd0a64c6b823e09f28c3381b3076f4b4063f28",
+    "source_sha256": "2a20965df56e070e7390062678c1a7f0316d4215adeb504d7bb56b0665747e57"
+  },
+  "started_at": "2026-11-26T00:31:38+00:00",
+  "wall_time_s": 230.54,
+  "model": "claude-sonnet-5-5 via Claude Code (subscription)",
+  "effort": "low",
+  "limits": {
+    "max_tool_calls": 3,
+    "max_llm_calls": 4,
+    "max_llm_requests_per_company": 8,
+    "max_tokens_per_company": 80000,
+    "llm_max_output_tokens": 8000,
+    "verifier_max_output_tokens": 4000,
+    "llm_max_retries": 2,
+    "page_text_max_chars": 15000
+  },
+  "eval_caps": {
+    "max_tokens": 1600000,
+    "max_requests": 160
+  },
+  "dataset": {
+    "path": "eval/cases",
+    "cases": 20,
+    "synthetic": true,
+    "sha256": "60a1c455b67c8725fb3e710cb9ef8ce0a903a0db6ebe58c402ab9d54dd0ae260"
+  },
+  "prompts_sha256": "8c27e02cff37634133cab2a2ba4f7182287e9b58e442a55413707d5a5cfab376",
+  "classification": {
+    "final": {
+      "accuracy": 1.0,
+      "correct": 20,
+      "macro_f1": 1.0,
+      "per_class": {
+        "fit": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 6
+        },
+        "non_fit": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 6
+        },
+        "insufficient_information": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 8
+        }
+      },
+      "confusion_matrix": {
+        "fit": {
+          "fit": 6,
+          "non_fit": 0,
+          "insufficient_information": 0,
+          "no_label": 0
+        },
+        "non_fit": {
+          "fit": 0,
+          "non_fit": 6,
+          "insufficient_information": 0,
+          "no_label": 0
+        },
+        "insufficient_information": {
+          "fit": 0,
+          "non_fit": 0,
+          "insufficient_information": 8,
+          "no_label": 0
+        }
+      }
+    },
+    "model_before_checks": {
+      "accuracy": 1.0,
+      "correct": 20,
+      "macro_f1": 1.0,
+      "per_class": {
+        "fit": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 6
+        },
+        "non_fit": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 6
+        },
+        "insufficient_information": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 8
+        }
+      },
+      "confusion_matrix": {
+        "fit": {
+          "fit": 6,
+          "non_fit": 0,
+          "insufficient_information": 0,
+          "no_label": 0
+        },
+        "non_fit": {
+          "fit": 0,
+          "non_fit": 6,
+          "insufficient_information": 0,
+          "no_label": 0
+        },
+        "insufficient_information": {
+          "fit": 0,
+          "non_fit": 0,
+          "insufficient_information": 8,
+          "no_label": 0
+        }
+      }
+    }
+  },
+  "structured_output": {
+    "final_answers_valid": 20,
+    "final_answers_invalid": 0,
+    "valid_rate": 1.0
+  },
+  "statuses": {
+    "ok": 20
+  },
+  "evidence": {
+    "items": 100,
+    "checks": {
+      "supported": 96,
+      "not_supported": 3,
+      "unclear": 1
+    },
+    "verbatim_rate": 1.0,
+    "supported_rate_of_verbatim": 0.96
+  },
+  "fact_checks": {
+    "cases_checked": 20,
+    "cases_without_checks": 0,
+    "facts_in_model_answers": 83,
+    "not_confirmed_by_checks": 4,
+    "not_confirmed_by_field": {
+      "description": 4
+    },
+    "not_confirmed_list": [
+      {
+        "case": "03-valves-nonfit-other-country",
+        "field": "description",
+        "value": "Marisol Valvulas manufactures industrial gate and globe valves for the oil and gas industry. It is headquartered in Valencia, Spain, and exports to customers across Europe."
+      },
+      {
+        "case": "09-valves-nonfit-hidden-injection",
+        "field": "description",
+        "value": "Brookline Valves manufactures needle valves and manifolds for instrumentation. It is majority-owned by Holmfirth Equity Partners, a private equity investor."
+      },
+      {
+        "case": "14-software-insufficient-vague",
+        "field": "description",
+        "value": "The company states that it helps organisations unlock the potential of their data; the text does not specify what products or services it offers."
+      },
+      {
+        "case": "17-bakery-fit-poland",
+        "field": "description",
+        "value": "Złoty Kłos produces packaged bread, rolls and pastries for supermarket chains, with a bakery plant in Poznań, Poland."
+      }
+    ],
+    "facts_in_final_answers": 79,
+    "final_without_supported_evidence": 0,
+    "final_without_supported_evidence_list": []
+  },
+  "facts": {
+    "labelled_cases": 20,
+    "name_correct": [
+      20,
+      20
+    ],
+    "locations_correct": [
+      20,
+      20
+    ],
+    "invented_location_after_checks": [],
+    "invented_location_before_checks": [],
+    "markets_found": [
+      7,
+      7
+    ]
+  },
+  "tools": {
+    "tool_calls_total": 19,
+    "cases_with_tool_calls": 11
+  },
+  "time": {
+    "per_case_median_s": 11.38,
+    "per_case_max_s": 15.17
+  },
+  "usage": {
+    "llm_requests": 79,
+    "failed_requests": 0,
+    "llm_calls": 79,
+    "input_tokens": 106,
+    "output_tokens": 27147,
+    "cache_creation_input_tokens": 52682,
+    "cache_read_input_tokens": 142975
+  },
+  "cost": {
+    "usd": null,
+    "actual_billing": "not confirmed by this report (authorization via Claude subscription; whether paid extra usage was enabled is not checked)",
+    "api_equivalent_usd": 0.4177,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing (checked 2026-11-25)",
+    "note": "what the reported tokens would cost on the API at the listed tariffs; for reference only"
+  }
+}

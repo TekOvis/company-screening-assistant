@@ -208,9 +208,26 @@ Each report also states the backend and how it is billed:
 - **Mock run:** 13/20 with the current labels and the agreed geography rule (commit
   `87084cc`). It only shows that the pipeline works end to end; keyword rules are not a
   model.
-- **Claude Code, full set** (2026-11-25, `claude-sonnet-5-5`, effort `low`). Two runs,
-  both kept in [`eval/results/`](eval/results). They used the **earlier** geography rule
-  and were scored against the labels of that time:
+- **Claude Code, full set, current rules** (run 3, 2026-11-26). Model
+  `claude-sonnet-5-5` through the `claude_code` backend (subscription login), effort
+  `low`. Code `25cd0a6` (application source as in `87084cc`), prompts sha256
+  `8c27e02cff37`, dataset sha256 `60a1c455b67c`.
+  - **20/20 final labels** on the synthetic set that was used during development. This
+    is not a claim of accuracy on real websites.
+  - The classification before and after the evidence checks was the same in every case.
+  - The verifier rejected four descriptions; no label depended on them.
+  - The remaining facts were accepted by automated checks (a verbatim quote plus a second
+    LLM check). That does not establish that they are independently true.
+  - **Not covered:** negative geography (`not_met`); no case in the set states that a
+    company has no site in the region.
+  - **Contested:** in case 06 the exclusion (a distributor) was not confirmed, because the
+    model cited a weaker quote. The label was still right through another criterion.
+  - 79 model requests, median 11 s per case. API-equivalent $0.42, for reference only.
+
+  Details: [docs/evaluation.md](docs/evaluation.md#full-set-through-claude-code-agreed-geography-rule-2026-11-26).
+- **Claude Code, earlier runs** (2026-11-25, same model and effort). Two runs, both kept
+  in [`eval/results/`](eval/results). They used the **earlier** geography rule and were
+  scored against the labels of that time:
   - **Run 1** stopped after 14 of 20 cases because of a budget bug in the evaluation
     runner. All 14 processed cases got the expected label.
   - **Run 2**, after the fix: all 20 cases processed, all 20 final labels equal the
@@ -220,12 +237,13 @@ Each report also states the backend and how it is billed:
     only.
   - **Recomputed separately** from the same saved answers against the labels changed on
     2026-11-26: run 2 matches in 17 of 20 cases (run 1: 11 of 20). The model answered
-    `non_fit` for cases 03, 12 and 13, as the earlier prompt said. The app has applied the
-    agreed rule since `87084cc`; no model run with it yet.
+    `non_fit` for cases 03, 12 and 13, as the earlier prompt said. Run 3 above uses the
+    agreed rule.
 
   Even 100% on these easy synthetic pages, written alongside the prompts, does not mean
-  the same accuracy on real websites. The description rule changed after these runs, and
-  its effect has not been measured yet.
+  the same accuracy on real websites. The description rule changed after runs 1 and 2.
+  Run 3 rejected 4 descriptions (run 2: 5), but the geography rule changed at the same
+  time, so that is not a clean measure of the description change.
 - **API backend:** not run yet (no API key).
 
 Details: [docs/evaluation.md](docs/evaluation.md).

@@ -19,7 +19,7 @@ are served from these files by `FixtureFetcher`, in mock mode and in live mode a
   source material by the author or by anyone else.
 - Expected answers must not be changed after seeing model results without recording the
   change and the reason in `docs/evaluation.md`. Changed so far: cases 03, 12 and 13, on
-  2026-11-26, after both full model runs had been seen.
+  2026-11-26, after the first two full model runs had been seen.
 - Case ids stay as first written, so they still match saved runs. The ids of 03, 12 and 13
   still say `nonfit`, their first label.
 - Case 01 was used during development: the first real-model check, which led to a change
@@ -50,7 +50,8 @@ languages or domains do not count. Exclusions are judged only on what the text s
   `non_fit` label.
 
 The app applies the same rule since commit `87084cc`: in the agent prompt, the evidence
-check and the mock. The saved model runs in [`results/`](results) predate it.
+check and the mock. Of the saved model runs in [`results/`](results), the two from
+2026-11-25 predate it; the run from 2026-11-26 uses it.
 
 ## Case format
 
