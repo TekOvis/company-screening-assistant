@@ -135,9 +135,9 @@ shows the format, not model quality:
 {
   "status": "ok",
   "company_name": "Marisol Valvulas",
-  "fit": "non_fit",
-  "model_fit": "non_fit",
-  "decision_note": "Rules after evidence checks: industry met, geography not_met, business met, exclusion not triggered -> non_fit.",
+  "fit": "insufficient_information",
+  "model_fit": "insufficient_information",
+  "decision_note": "Rules after evidence checks: industry met, geography unknown, business met, exclusion not triggered -> insufficient_information.",
   "company_locations": ["Valencia", "Spain"],
   "markets_served": ["Europe"],
   "evidence": [
@@ -149,9 +149,12 @@ shows the format, not model quality:
     }
   ],
   "warnings": [],
-  "usage": {"llm_requests": 2, "failed_requests": 0, "input_tokens": 1801, "output_tokens": 514}
+  "usage": {"llm_requests": 2, "failed_requests": 0, "input_tokens": 2489, "output_tokens": 626}
 }
 ```
+
+The headquarters in Spain does not establish that the company has no own site in
+Germany. Export markets are not company locations, so geography remains `unknown`.
 
 Exports: `GET /runs/{id}/export.json` and `GET /runs/{id}/export.csv`. The CSV is
 protected against formula injection.
