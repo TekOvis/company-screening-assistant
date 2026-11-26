@@ -1,11 +1,13 @@
 # Deploying the demo
 
-**Status (2026-11-25, 23:10 UTC):** the mock demo is live at
-<https://screener.rustwatchtower.net>, release `0ccb86db0782`, with an external health
-check every minute. Pages are parsed in a child process that a time limit can stop. An
-access token is required; access is provided on request. See [Activation record](#activation-record-2026-11-25),
-[Update: health check](#update-health-check-2026-11-25-2112-utc) and
-[Update: parser in a child process](#update-parser-in-a-child-process-2026-11-25-2305-utc).
+**Status (2026-11-26, 01:02 UTC):** the mock demo is live at
+<https://screener.rustwatchtower.net>, release `76ece6832fc5` (the merge of pull request
+#1), with an external health check every minute and the agreed geography rule. Pages are
+parsed in a child process that a time limit can stop. An access token is required;
+access is provided on request. See [Activation record](#activation-record-2026-11-25),
+[Update: health check](#update-health-check-2026-11-25-2112-utc),
+[Update: parser in a child process](#update-parser-in-a-child-process-2026-11-25-2305-utc)
+and [Update: agreed geography rule](#update-agreed-geography-rule-2026-11-26-0102-utc).
 - It runs as a **mock-mode** service on a small VPS shared with another running application, without
   Docker. See [Shared VPS without Docker](#shared-vps-without-docker-planned-first-demo).
 - The Dockerfile route below is kept for other hosts. The image has not been built yet,
@@ -26,9 +28,7 @@ managed by systemd behind Caddy.
   quality of an LLM.
 - **Examples:** five ready-made synthetic examples (`DEMO_EXAMPLES=true`) run on saved
   pages and show their expected label next to the result. One of them (a distributor) is
-  a case the mock gets wrong; a test checks that no other example is. The release on the
-  server, `0ccb86db0782`, still has example 03's earlier label and the earlier geography
-  rule until the next update.
+  a case the mock gets wrong; a test checks that no other example is.
 - **Access:** an access token is required (`PUBLIC_DEMO=true`).
 
 **Files** in [`deploy/`](../deploy):
@@ -629,6 +629,51 @@ no process used its files, and no file in `/etc` named it. Then its directory (8
 its install archive in `/root` were removed. Kept: `0ccb86db0782` (current),
 `7804bc4373aa` (the rollback target), their archives and all backups. The backup
 `20261125T211228Z` still names it in `previous-current.txt`; that is history only.
+
+### Update: agreed geography rule (2026-11-26, 01:02 UTC)
+
+**What changed:** release `76ece6832fc5`, the merge commit of pull request #1 on GitHub.
+Its tree is the one CI passed on. For the server, the change since `0ccb86db0782` is the
+geography rule (`87084cc`: agent prompt, evidence check, mock) and the demo examples; the
+unit changed only in a comment. The parser and the dependencies did not change, so no new
+load check was run.
+
+**Backups before the install.**
+- `/var/backups/company-screener/20261126T010145Z-before-76ece6832fc5/` (mode 700): the
+  app unit, the health check unit, timer and script, `screener.env` (mode 600), the
+  release pointer (`0ccb86db0782`) and `SHA256SUMS`.
+- `install.sh` made its own: `/var/backups/company-screener/20261126T010208Z/`.
+
+**Checks** (all passed):
+- **Install and restart** at 01:02 UTC. The archive's SHA-256 matched the local one.
+  `/healthz` answered with the mock backend, the process uses files from `76ece6832fc5`
+  only, and without the token `/` redirects to `/login`. Over HTTPS:
+  - **Example 03:** expected and mock result both `insufficient_information`, geography
+    `unknown`. That is the agreed rule at work.
+  - **Example 06:** still the one known mock miss, expected `non_fit`, mock `fit`.
+- **Real public pages.** The same two other sites on this server as before went through
+  `/api/screen`. Both came back `ok`, one page each, with no parser warning.
+- **One cgroup.** Three processes (app, resource tracker, parser), 103 MB, and no process
+  of user `screener` outside it.
+- **Afterwards.** All services active, `NRestarts` 0, no app warnings. The other
+  applications on the server answered 200.
+
+**Rolling back this update** (back to `0ccb86db0782`, with the earlier geography rule):
+
+```bash
+ln -sfn /opt/company-screener/releases/0ccb86db0782 /opt/company-screener/current.new \
+  && mv -T /opt/company-screener/current.new /opt/company-screener/current
+install -m 644 /var/backups/company-screener/20261126T010145Z-before-76ece6832fc5/company-screener.service \
+  /etc/systemd/system/company-screener.service
+systemctl daemon-reload
+systemctl restart company-screener
+curl -fsS http://127.0.0.1:8001/healthz
+```
+
+**Releases on the server.**
+- `76ece6832fc5`: current.
+- `0ccb86db0782`: the rollback target.
+- `7804bc4373aa`: older, with the parser thread. Kept until removing it is decided.
 
 ## Docker route (other hosts)
 

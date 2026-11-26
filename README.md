@@ -298,8 +298,8 @@ resource limits and an external health check every minute. The files are in
 Measurements, the limits and what they do not guarantee, activation and rollback:
 [docs/deployment.md](docs/deployment.md).
 
-Current state (2026-11-25): the mock demo is live at
-<https://screener.rustwatchtower.net>, release `0ccb86db0782`. **It needs an access
+Current state (2026-11-26): the mock demo is live at
+<https://screener.rustwatchtower.net>, release `76ece6832fc5`. **It needs an access
 token, which is provided on request.** There is no LLM on the server. The Docker image has not been built, because Docker is
 not available on the development machine.
 
