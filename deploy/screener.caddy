@@ -1,0 +1,16 @@
+# Site block for Caddy. Appended to /etc/caddy/Caddyfile only at activation, after a
+# backup and a validation run as the caddy user (see docs/deployment.md).
+screener.rustwatchtower.net {
+	encode gzip
+	request_body {
+		max_size 64KB
+	}
+	reverse_proxy 127.0.0.1:8001
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+}

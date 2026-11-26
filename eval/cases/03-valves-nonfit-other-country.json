@@ -1,0 +1,31 @@
+{
+  "id": "03-valves-nonfit-other-country",
+  "synthetic": true,
+  "description": "Valve manufacturer headquartered in Spain that exports to Germany: Germany is a market, not a location.",
+  "tags": ["own-site-elsewhere", "markets-vs-location"],
+  "criteria": {
+    "industry": "industrial valves",
+    "geography": "Germany",
+    "target_business": "Manufacturer of industrial valves or other flow-control equipment",
+    "exclusions": "pure distributors or resellers; companies owned by private equity firms"
+  },
+  "start_url": "https://marisol-valvulas.example/",
+  "pages": {
+    "https://marisol-valvulas.example/": {
+      "html": [
+        "<html><head><title>Marisol Valvulas | Industrial gate valves</title></head><body>",
+        "<p>Marisol Valvulas manufactures industrial gate and globe valves for the oil and gas industry.</p>",
+        "<p>Headquartered in Valencia, Spain, we export to customers across Europe, including Germany and France.</p>",
+        "</body></html>"
+      ]
+    }
+  },
+  "expected": {
+    "fit": "insufficient_information",
+    "company_name": ["Marisol Valvulas"],
+    "company_locations": [["Valencia"], ["Spain"]],
+    "forbidden_locations": ["Germany", "France"],
+    "markets_served": [["Germany"], ["France"]]
+  },
+  "label_rationale": "Manufactures industrial valves (industry and target business met). The text names only the headquarters in Valencia, Spain; Germany is only an export market. Any confirmed own site in Germany would meet the geography criterion, and the text neither shows one nor confirms that there is none, so geography is unknown. Label changed on 2026-11-26 from non_fit; see docs/evaluation.md."
+}

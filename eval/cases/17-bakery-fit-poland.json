@@ -1,0 +1,31 @@
+{
+  "id": "17-bakery-fit-poland",
+  "synthetic": true,
+  "description": "Polish producer of packaged bakery products for supermarket chains.",
+  "tags": ["homepage-only"],
+  "criteria": {
+    "industry": "food production",
+    "geography": "Poland",
+    "target_business": "Producer of packaged bakery products for supermarket chains",
+    "exclusions": "businesses that only sell through their own retail shops"
+  },
+  "start_url": "https://zloty-klos.example/",
+  "pages": {
+    "https://zloty-klos.example/": {
+      "html": [
+        "<html><head><title>Złoty Kłos | Packaged bread and pastries</title></head><body>",
+        "<p>Złoty Kłos produces packaged bread, rolls and pastries for supermarket chains.</p>",
+        "<p>Our bakery plant is located in Poznań, Poland.</p>",
+        "</body></html>"
+      ]
+    }
+  },
+  "expected": {
+    "fit": "fit",
+    "company_name": ["Złoty Kłos", "Zloty Klos"],
+    "company_locations": [["Poznań", "Poznan"], ["Poland"]],
+    "forbidden_locations": [],
+    "markets_served": []
+  },
+  "label_rationale": "Produces packaged bakery products for supermarket chains (industry and target business met); bakery plant in Poznań, Poland (geography met); sells to chains, so the retail-only exclusion does not apply."
+}

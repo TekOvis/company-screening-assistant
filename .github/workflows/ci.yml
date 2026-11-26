@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          python-version: "3.12"
+      # The claude-code extra is installed only so its adapter tests run; they use a fake
+      # query() and never start Claude Code or use a subscription.
+      - name: Install locked dependencies
+        run: uv sync --locked --extra claude-code
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format check
+        run: uv run ruff format --check .
+      # Mock mode only: no API key, no paid calls, no internet access needed by the tests.
+      - name: Tests
+        run: uv run pytest
+      - name: Evaluation in mock mode (pipeline check, not model quality)
+        run: uv run python -m screener.evaluate --mode mock --out eval/runs/ci

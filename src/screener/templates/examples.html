@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Examples — Company Screening Assistant{% endblock %}
+{% block content %}
+<h1>Try a ready-made example</h1>
+<p class="lead">Each example is an <strong>invented company</strong> from the project's
+  synthetic test set. Its website pages are saved files, so nothing is fetched from the
+  internet. The expected label is shown here and next to the result, so you can see when
+  the app gets it wrong.</p>
+
+{% if errors %}
+<div class="errors" role="alert">
+  <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<ul class="example-list">
+  {% for case_id, example in examples.items() %}
+  <li class="example">
+    <h2>{{ example.title }}</h2>
+    <dl class="criteria">
+      <dt>Website</dt><dd>{{ example.case.start_url }} <span class="hint">(synthetic)</span></dd>
+      <dt>Industry</dt><dd>{{ example.case.criteria.industry }}</dd>
+      <dt>Geography</dt><dd>{{ example.case.criteria.geography }}</dd>
+      <dt>Target business</dt><dd>{{ example.case.criteria.target_business }}</dd>
+      <dt>Exclusions</dt><dd>{{ example.case.criteria.exclusions or "—" }}</dd>
+      <dt>Expected label</dt><dd><span class="badge badge-{{ example.case.expected.fit }}">{{ example.case.expected.fit }}</span></dd>
+    </dl>
+    <form method="post" action="/examples/{{ case_id }}">
+      <button type="submit">Run this example</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+<p><a href="/">Or screen your own URLs</a></p>
+{% endblock %}

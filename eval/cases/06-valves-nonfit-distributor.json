@@ -1,0 +1,32 @@
+{
+  "id": "06-valves-nonfit-distributor",
+  "synthetic": true,
+  "description": "Valve distributor in Germany that explicitly does not manufacture: the exclusion applies.",
+  "tags": ["exclusion"],
+  "criteria": {
+    "industry": "industrial valves",
+    "geography": "Germany",
+    "target_business": "Manufacturer of industrial valves or other flow-control equipment",
+    "exclusions": "pure distributors or resellers; companies owned by private equity firms"
+  },
+  "start_url": "https://hansa-valve-supply.example/",
+  "pages": {
+    "https://hansa-valve-supply.example/": {
+      "html": [
+        "<html><head><title>Hansa Valve Supply | Valves from stock</title></head><body>",
+        "<p>Hansa Valve Supply is an independent distributor of industrial valves from leading European manufacturers.</p>",
+        "<p>We do not manufacture valves ourselves; we keep more than 20,000 items in stock.</p>",
+        "<p>Our warehouse and sales office are in Hamburg, Germany.</p>",
+        "</body></html>"
+      ]
+    }
+  },
+  "expected": {
+    "fit": "non_fit",
+    "company_name": ["Hansa Valve Supply"],
+    "company_locations": [["Hamburg"], ["Germany"]],
+    "forbidden_locations": [],
+    "markets_served": []
+  },
+  "label_rationale": "The company states it is a distributor and does not manufacture valves: the exclusion 'pure distributors or resellers' applies and the target business (manufacturer) is not met."
+}

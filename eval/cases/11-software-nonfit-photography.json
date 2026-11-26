@@ -1,0 +1,31 @@
+{
+  "id": "11-software-nonfit-photography",
+  "synthetic": true,
+  "description": "Photography studio in Austria: right geography, wrong industry.",
+  "tags": ["industry-mismatch"],
+  "criteria": {
+    "industry": "B2B software",
+    "geography": "DACH (Germany, Austria, Switzerland)",
+    "target_business": "Developer of software products for manufacturing companies",
+    "exclusions": null
+  },
+  "start_url": "https://pixelgarten.example/",
+  "pages": {
+    "https://pixelgarten.example/": {
+      "html": [
+        "<html><head><title>Pixelgarten | Wedding and event photography</title></head><body>",
+        "<p>Pixelgarten is a photography studio for weddings, portraits and corporate events.</p>",
+        "<p>Our studio is located in Graz, Austria.</p>",
+        "</body></html>"
+      ]
+    }
+  },
+  "expected": {
+    "fit": "non_fit",
+    "company_name": ["Pixelgarten"],
+    "company_locations": [["Graz"], ["Austria"]],
+    "forbidden_locations": [],
+    "markets_served": []
+  },
+  "label_rationale": "A photography studio, not a software developer: industry and target business are not met, although the studio is in Graz, Austria (geography met)."
+}

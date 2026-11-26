@@ -1,0 +1,40 @@
+{
+  "id": "04-valves-insufficient-markets-only",
+  "synthetic": true,
+  "description": "Valve manufacturer that only says where its customers are; the own location is never stated.",
+  "tags": ["markets-vs-location", "indirect-signals"],
+  "criteria": {
+    "industry": "industrial valves",
+    "geography": "Germany",
+    "target_business": "Manufacturer of industrial valves or other flow-control equipment",
+    "exclusions": "pure distributors or resellers; companies owned by private equity firms"
+  },
+  "start_url": "https://ostwind-armaturen.example/",
+  "pages": {
+    "https://ostwind-armaturen.example/": {
+      "html": [
+        "<html><head><title>Ostwind Armaturen | Control valves</title></head><body>",
+        "<nav><a href='/contact'>Contact</a></nav>",
+        "<p>Ostwind Armaturen manufactures pneumatic control valves for district heating networks.</p>",
+        "<p>We serve customers in Germany, Austria and Switzerland.</p>",
+        "</body></html>"
+      ]
+    },
+    "https://ostwind-armaturen.example/contact": {
+      "html": [
+        "<html><head><title>Contact</title></head><body>",
+        "<p>Write to sales@ostwind-armaturen.example or call +49 30 5550 1234.</p>",
+        "<p>Prices are quoted in EUR.</p>",
+        "</body></html>"
+      ]
+    }
+  },
+  "expected": {
+    "fit": "insufficient_information",
+    "company_name": ["Ostwind Armaturen"],
+    "company_locations": [],
+    "forbidden_locations": ["Germany", "Austria", "Switzerland", "Berlin"],
+    "markets_served": [["Germany"], ["Austria"], ["Switzerland"]]
+  },
+  "label_rationale": "Manufactures control valves (industry and target business met). The company's own location is never stated: serving customers in Germany is a market, and the +49 phone number and EUR prices are only indirect signals. Geography is unknown."
+}

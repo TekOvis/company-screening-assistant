@@ -1,0 +1,32 @@
+{
+  "id": "12-software-nonfit-latvia",
+  "synthetic": true,
+  "description": "Manufacturing software company based in Latvia, outside DACH.",
+  "tags": ["own-site-elsewhere", "region-criteria"],
+  "criteria": {
+    "industry": "B2B software",
+    "geography": "DACH (Germany, Austria, Switzerland)",
+    "target_business": "Developer of software products for manufacturing companies",
+    "exclusions": null
+  },
+  "start_url": "https://baltic-forge.example/",
+  "pages": {
+    "https://baltic-forge.example/": {
+      "html": [
+        "<html><head><title>Baltic Forge Software | Quality control software</title></head><body>",
+        "<p>Baltic Forge Software develops quality-control and traceability software for metalworking factories.</p>",
+        "<p>Our team is based in Riga, Latvia.</p>",
+        "<p>We work with manufacturers across the Baltics and the Nordics.</p>",
+        "</body></html>"
+      ]
+    }
+  },
+  "expected": {
+    "fit": "insufficient_information",
+    "company_name": ["Baltic Forge Software"],
+    "company_locations": [["Riga"], ["Latvia"]],
+    "forbidden_locations": [],
+    "markets_served": [["Baltics"], ["Nordics"]]
+  },
+  "label_rationale": "Develops software for manufacturers (industry and target business met). The team is based in Riga, Latvia, and the Baltics and the Nordics are markets. Any confirmed own site in DACH would meet the geography criterion, and the text neither shows one nor confirms that there is none, so geography is unknown. Label changed on 2026-11-26 from non_fit; see docs/evaluation.md."
+}

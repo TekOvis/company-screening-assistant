@@ -1,0 +1,41 @@
+{
+  "source": "results.jsonl",
+  "computed_with": {
+    "git_commit": "25cd0a64c6b823e09f28c3381b3076f4b4063f28",
+    "source_sha256": "2a20965df56e070e7390062678c1a7f0316d4215adeb504d7bb56b0665747e57"
+  },
+  "fact_checks": {
+    "cases_checked": 20,
+    "cases_without_checks": 0,
+    "facts_in_model_answers": 83,
+    "not_confirmed_by_checks": 4,
+    "not_confirmed_by_field": {
+      "description": 4
+    },
+    "not_confirmed_list": [
+      {
+        "case": "03-valves-nonfit-other-country",
+        "field": "description",
+        "value": "Marisol Valvulas manufactures industrial gate and globe valves for the oil and gas industry. It is headquartered in Valencia, Spain, and exports to customers across Europe."
+      },
+      {
+        "case": "09-valves-nonfit-hidden-injection",
+        "field": "description",
+        "value": "Brookline Valves manufactures needle valves and manifolds for instrumentation. It is majority-owned by Holmfirth Equity Partners, a private equity investor."
+      },
+      {
+        "case": "14-software-insufficient-vague",
+        "field": "description",
+        "value": "The company states that it helps organisations unlock the potential of their data; the text does not specify what products or services it offers."
+      },
+      {
+        "case": "17-bakery-fit-poland",
+        "field": "description",
+        "value": "Złoty Kłos produces packaged bread, rolls and pastries for supermarket chains, with a bakery plant in Poznań, Poland."
+      }
+    ],
+    "facts_in_final_answers": 79,
+    "final_without_supported_evidence": 0,
+    "final_without_supported_evidence_list": []
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "id": "02-valves-fit-location-on-about",
+  "synthetic": true,
+  "description": "Valve manufacturer; the location is only on the About page, so the agent must fetch it.",
+  "tags": ["needs-subpage"],
+  "criteria": {
+    "industry": "industrial valves",
+    "geography": "Germany",
+    "target_business": "Manufacturer of industrial valves or other flow-control equipment",
+    "exclusions": "pure distributors or resellers; companies owned by private equity firms"
+  },
+  "start_url": "https://kestrel-flow.example/",
+  "pages": {
+    "https://kestrel-flow.example/": {
+      "html": [
+        "<html><head><title>Kestrel Flow Control</title></head><body>",
+        "<nav><a href='/products'>Products</a> <a href='/about'>About us</a> <a href='/contact'>Contact</a></nav>",
+        "<h1>Precise control for every process</h1>",
+        "<p>Kestrel Flow Control develops and manufactures control valves and actuators for water treatment and the food industry.</p>",
+        "<p>Ask our engineers about custom designs.</p>",
+        "</body></html>"
+      ]
+    },
+    "https://kestrel-flow.example/about": {
+      "html": [
+        "<html><head><title>About Kestrel Flow Control</title></head><body>",
+        "<p>Kestrel Flow Control was founded in 1998 by two engineers.</p>",
+        "<p>Our head office and our plant are located in Kassel, Germany.</p>",
+        "</body></html>"
+      ]
+    }
+  },
+  "expected": {
+    "fit": "fit",
+    "company_name": ["Kestrel Flow Control"],
+    "company_locations": [["Kassel"], ["Germany"]],
+    "forbidden_locations": [],
+    "markets_served": []
+  },
+  "label_rationale": "Manufactures control valves (industry and target business met). The About page states head office and plant in Kassel, Germany (geography met). No exclusion is indicated."
+}

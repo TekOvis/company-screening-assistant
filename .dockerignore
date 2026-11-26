@@ -1,0 +1,15 @@
+# Never send secrets or local state into the image build.
+.env
+.env.*
+.git
+.venv
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.github/
+# Not needed at runtime (evaluation and tests run locally).
+eval/
+tests/
+docs/
+scripts/

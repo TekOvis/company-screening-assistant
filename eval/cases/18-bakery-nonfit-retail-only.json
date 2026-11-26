@@ -1,0 +1,31 @@
+{
+  "id": "18-bakery-nonfit-retail-only",
+  "synthetic": true,
+  "description": "Polish bakery that sells only in its own shops: the exclusion applies.",
+  "tags": ["exclusion"],
+  "criteria": {
+    "industry": "food production",
+    "geography": "Poland",
+    "target_business": "Producer of packaged bakery products for supermarket chains",
+    "exclusions": "businesses that only sell through their own retail shops"
+  },
+  "start_url": "https://mala-piekarnia.example/",
+  "pages": {
+    "https://mala-piekarnia.example/": {
+      "html": [
+        "<html><head><title>Mała Piekarnia | Neighbourhood bakery</title></head><body>",
+        "<p>Mała Piekarnia runs five neighbourhood bakery shops in Kraków, Poland.</p>",
+        "<p>We bake fresh every morning and sell only in our own shops.</p>",
+        "</body></html>"
+      ]
+    }
+  },
+  "expected": {
+    "fit": "non_fit",
+    "company_name": ["Mała Piekarnia", "Mala Piekarnia"],
+    "company_locations": [["Kraków", "Krakow"], ["Poland"]],
+    "forbidden_locations": [],
+    "markets_served": []
+  },
+  "label_rationale": "The bakery states it sells only in its own shops: the retail-only exclusion applies, and it does not supply supermarket chains (target business not met)."
+}

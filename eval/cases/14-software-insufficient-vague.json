@@ -1,0 +1,32 @@
+{
+  "id": "14-software-insufficient-vague",
+  "synthetic": true,
+  "description": "Marketing-style homepage that never says what the company actually sells or where it is.",
+  "tags": ["vague"],
+  "criteria": {
+    "industry": "B2B software",
+    "geography": "DACH (Germany, Austria, Switzerland)",
+    "target_business": "Developer of software products for manufacturing companies",
+    "exclusions": null
+  },
+  "start_url": "https://northwind-digital.example/",
+  "pages": {
+    "https://northwind-digital.example/": {
+      "html": [
+        "<html><head><title>Northwind Digital</title></head><body>",
+        "<h1>Empowering transformation</h1>",
+        "<p>We help ambitious organisations unlock the full potential of their data.</p>",
+        "<p>Curious? Let us talk about your next step.</p>",
+        "</body></html>"
+      ]
+    }
+  },
+  "expected": {
+    "fit": "insufficient_information",
+    "company_name": ["Northwind Digital"],
+    "company_locations": [],
+    "forbidden_locations": [],
+    "markets_served": []
+  },
+  "label_rationale": "The text does not state what the company makes, for whom, or where it is located. Nothing explicitly shows a criterion is met or not met, so the information is insufficient."
+}

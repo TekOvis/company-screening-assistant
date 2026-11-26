@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Screening results — Company Screening Assistant{% endblock %}
+{% block head %}
+  {% if run.status == "running" %}<meta http-equiv="refresh" content="3">{% endif %}
+{% endblock %}
+{% block content %}
+<h1>Screening results</h1>
+
+<section class="run-summary">
+  {% if run.example_id %}
+  <p class="example-note">Synthetic example <code>{{ run.example_id }}</code>: an invented
+    company on saved pages. Expected label:
+    <span class="badge badge-{{ run.example_expected }}">{{ run.example_expected }}</span>
+    <a href="/examples">Other examples</a></p>
+  {% endif %}
+  <p>
+    {% if run.status == "running" %}
+      <strong>Processing…</strong> {{ results|length }} of {{ run.urls|length }} companies done.
+      This page refreshes automatically.
+    {% elif run.status == "done" %}
+      <strong>Done.</strong> {{ results|length }} companies processed.
+    {% else %}
+      <strong>Failed:</strong> {{ run.error }}
+    {% endif %}
+  </p>
+  {% if run.stop_reason %}
+  <p class="error-text" role="alert">Stopped early: {{ run.stop_reason }}.
+    Companies not yet processed were skipped.</p>
+  {% endif %}
+  <dl class="criteria">
+    <dt>Industry</dt><dd>{{ run.criteria.industry }}</dd>
+    <dt>Geography</dt><dd>{{ run.criteria.geography }} <span class="hint">(where the company itself is located)</span></dd>
+    <dt>Target business</dt><dd>{{ run.criteria.target_business }}</dd>
+    <dt>Exclusions</dt><dd>{{ run.criteria.exclusions or "—" }}</dd>
+  </dl>
+  <p class="exports">
+    Export: <a href="/runs/{{ run.run_id }}/export.json">JSON</a> ·
+    <a href="/runs/{{ run.run_id }}/export.csv">CSV</a>
+    <span class="hint">· {{ usage.llm_requests }} API requests ({{ usage.failed_requests }} failed),
+      {{ usage.input_tokens }} input / {{ usage.output_tokens }} output tokens
+      {% if backend == "mock" %}(mock estimates, nothing billed)
+      {% elif backend == "claude_code" %}(authorization via Claude subscription; actual billing is not shown here)
+      {% else %}(Anthropic API: billed per token){% endif %}</span>
+  </p>
+  <p class="hint">Facts are shown only when a verbatim quote from a fetched page supports them
+    and a second check agreed. That second check is automated too and can be wrong.</p>
+</section>
+
+{% if results %}
+<div class="table-wrap">
+<table class="results">
+  <thead>
+    <tr>
+      <th scope="col">#</th>
+      <th scope="col">Company</th>
+      <th scope="col">Fit</th>
+      <th scope="col">Industry</th>
+      <th scope="col">Located in</th>
+      <th scope="col">Markets served</th>
+      <th scope="col">Description</th>
+      <th scope="col">Evidence</th>
+      <th scope="col">Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in results %}
+    <tr>
+      <td>{{ r.position + 1 }}</td>
+      <td>
+        <strong>{{ r.company_name or "—" }}</strong><br>
+        {# A rejected URL (e.g. one that resolves to 127.0.0.1) is shown as text, not as a link. #}
+        {% set href = r.input_url|safe_href if r.status != "invalid_url" else None %}
+        {% if href %}<a href="{{ href }}" rel="noopener noreferrer nofollow" target="_blank">{{ r.input_url }}</a>
+        {% else %}{{ r.input_url }}{% endif %}
+      </td>
+      <td>
+        {% if r.fit %}<span class="badge badge-{{ r.fit }}">{{ r.fit|replace("_", " ") }}</span>
+        {% else %}<span class="badge badge-error">{{ r.status|replace("_", " ") }}</span>{% endif %}
+        {% if r.model_fit and r.model_fit != r.fit %}
+          <div class="hint">model said: {{ r.model_fit|replace("_", " ") }}</div>
+        {% endif %}
+        {% if r.decision_note %}<div class="hint">{{ r.decision_note }}</div>{% endif %}
+      </td>
+      <td>{{ r.industry or "—" }}</td>
+      <td>{{ r.company_locations|join("; ") if r.company_locations else "—" }}</td>
+      <td>{{ r.markets_served|join("; ") if r.markets_served else "—" }}</td>
+      <td class="col-description">{{ r.description or "—" }}</td>
+      <td class="col-evidence">
+        {% if r.evidence %}
+        <details>
+          <summary>{{ r.evidence|length }} quote{{ "s" if r.evidence|length != 1 }}</summary>
+          <ul class="evidence">
+          {% for e in r.evidence %}
+            <li>
+              <span class="tag">{{ e.supports|replace("_", " ") }}</span>
+              <span class="check check-{{ e.check }}">{{ CHECK_LABELS[e.check] }}</span>
+              <q>{{ e.quote }}</q>
+              {% set source = e.url|safe_href %}
+              {% if source %}<a href="{{ source }}" rel="noopener noreferrer nofollow" target="_blank">source</a>{% endif %}
+              <div class="claim">{{ e.claim }}{% if e.check_note %} — {{ e.check_note }}{% endif %}</div>
+            </li>
+          {% endfor %}
+          </ul>
+        </details>
+        {% else %}—{% endif %}
+      </td>
+      <td class="notes">
+        {% if r.error %}<div class="error-text">{{ r.error }}</div>{% endif %}
+        {% for w in r.warnings %}<div class="warning-text">{{ w }}</div>{% endfor %}
+        {% if r.rationale %}<div><span class="hint">Model rationale (not verified):</span> {{ r.rationale }}</div>{% endif %}
+        <div class="hint">{{ r.usage.llm_requests }} API requests / {{ r.tool_calls }} tool calls ·
+          {{ "%.1f"|format(r.duration_s) }} s</div>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+<p><a href="/">← New screening</a></p>
+{% endblock %}

@@ -1,0 +1,31 @@
+{
+  "id": "16-software-fit-second-office",
+  "synthetic": true,
+  "description": "Dutch-headquartered software company with its own development office in Munich.",
+  "tags": ["multi-site", "region-criteria"],
+  "criteria": {
+    "industry": "B2B software",
+    "geography": "DACH (Germany, Austria, Switzerland)",
+    "target_business": "Developer of software products for manufacturing companies",
+    "exclusions": null
+  },
+  "start_url": "https://polder-systems.example/",
+  "pages": {
+    "https://polder-systems.example/": {
+      "html": [
+        "<html><head><title>Polder Systems | Shop-floor scheduling</title></head><body>",
+        "<p>Polder Systems develops shop-floor scheduling software for discrete manufacturers.</p>",
+        "<p>Headquarters: Utrecht, Netherlands. Development office in Munich, Germany.</p>",
+        "</body></html>"
+      ]
+    }
+  },
+  "expected": {
+    "fit": "fit",
+    "company_name": ["Polder Systems"],
+    "company_locations": [["Utrecht"], ["Netherlands"], ["Munich", "München"], ["Germany"]],
+    "forbidden_locations": [],
+    "markets_served": []
+  },
+  "label_rationale": "Software for manufacturers (industry and target business met). Under the label definition, geography is met when any of the company's own sites is in the target area; the company has its own development office in Munich, Germany."
+}

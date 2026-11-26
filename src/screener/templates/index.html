@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Screen company websites</h1>
+<p class="lead">Paste up to {{ max_urls }} company website URLs and describe what you are
+  looking for. Each site's text is checked against your criteria; facts that the site does
+  not state are left empty instead of guessed.</p>
+{% if examples_enabled %}
+<p class="lead">No URLs at hand? <a href="/examples">Try a ready-made synthetic example.</a></p>
+{% endif %}
+
+{% if errors %}
+<div class="errors" role="alert">
+  <p><strong>Please fix the following:</strong></p>
+  <ul>
+    {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<form method="post" action="/screen" class="screen-form">
+  <label for="urls">Company URLs <span class="hint">one per line, up to {{ max_urls }}</span></label>
+  <textarea id="urls" name="urls" rows="6" required
+    placeholder="https://www.company-one.com&#10;company-two.de">{{ form.urls or "" }}</textarea>
+
+  <div class="grid">
+    <div>
+      <label for="industry">Industry</label>
+      <input id="industry" name="industry" type="text" maxlength="200" required
+        placeholder="e.g. industrial valves" value="{{ form.industry or '' }}">
+    </div>
+    <div>
+      <label for="geography">Geography <span class="hint">where the company itself is located</span></label>
+      <input id="geography" name="geography" type="text" maxlength="200" required
+        placeholder="e.g. Germany, DACH, Europe" value="{{ form.geography or '' }}">
+    </div>
+  </div>
+
+  <label for="target_business">Description of a suitable business</label>
+  <textarea id="target_business" name="target_business" rows="3" maxlength="1000" required
+    placeholder="e.g. Manufacturer of industrial valves for process industries">{{ form.target_business or "" }}</textarea>
+
+  <label for="exclusions">Exclusions <span class="hint">optional</span></label>
+  <textarea id="exclusions" name="exclusions" rows="2" maxlength="1000"
+    placeholder="e.g. distributors only; companies owned by private equity">{{ form.exclusions or "" }}</textarea>
+
+  <button type="submit">Screen companies</button>
+</form>
+{% endblock %}

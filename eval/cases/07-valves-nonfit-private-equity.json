@@ -1,0 +1,39 @@
+{
+  "id": "07-valves-nonfit-private-equity",
+  "synthetic": true,
+  "description": "German valve manufacturer whose private-equity ownership is stated only on the About page.",
+  "tags": ["exclusion", "needs-subpage"],
+  "criteria": {
+    "industry": "industrial valves",
+    "geography": "Germany",
+    "target_business": "Manufacturer of industrial valves or other flow-control equipment",
+    "exclusions": "pure distributors or resellers; companies owned by private equity firms"
+  },
+  "start_url": "https://ferrum-valves.example/",
+  "pages": {
+    "https://ferrum-valves.example/": {
+      "html": [
+        "<html><head><title>Ferrum Valves | Cast iron valves</title></head><body>",
+        "<nav><a href='/about'>About</a></nav>",
+        "<p>Ferrum Valves manufactures cast iron gate valves and check valves for municipal water networks.</p>",
+        "<p>Our foundry and assembly plant are located in Leipzig, Germany.</p>",
+        "</body></html>"
+      ]
+    },
+    "https://ferrum-valves.example/about": {
+      "html": [
+        "<html><head><title>About Ferrum Valves</title></head><body>",
+        "<p>Founded in 1952, Ferrum Valves has been part of the portfolio of Granite Peak Capital, a private equity firm, since 2021.</p>",
+        "</body></html>"
+      ]
+    }
+  },
+  "expected": {
+    "fit": "non_fit",
+    "company_name": ["Ferrum Valves"],
+    "company_locations": [["Leipzig"], ["Germany"]],
+    "forbidden_locations": [],
+    "markets_served": []
+  },
+  "label_rationale": "Industry, target business and geography are met (manufacturer with a plant in Leipzig, Germany), but the About page states ownership by a private equity firm, so the exclusion applies. Finding it requires fetching the About page."
+}

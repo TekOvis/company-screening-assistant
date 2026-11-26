@@ -1,0 +1,76 @@
+# Company Screening Assistant: mock demo on a VPS shared with another service.
+# Installed by deploy/install.sh but NOT enabled or started; see docs/deployment.md.
+#
+# The resource limits are preliminary. They come from local measurements
+# (scripts/measure_memory.py) and must be checked on the server. They limit this service
+# but do not guarantee that it has no effect on its neighbours: disk, network, the page
+# cache and the kernel remain shared.
+
+[Unit]
+Description=Company Screening Assistant (demo)
+After=network-online.target
+Wants=network-online.target
+# No endless restart loop: after 5 starts within 10 minutes (crashes, the health check,
+# manual restarts) systemd leaves the service failed until someone runs
+# `systemctl reset-failed company-screener` and starts it again.
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=screener
+Group=screener
+WorkingDirectory=/opt/company-screener/current
+EnvironmentFile=/etc/company-screener/screener.env
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+# Loopback only: Caddy on the same host is the only client. X-Forwarded-For is trusted
+# only from 127.0.0.1, so the per-IP limits see the real client address.
+# "python -m uvicorn", not venv/bin/uvicorn: it does not depend on script shebang paths.
+ExecStart=/opt/company-screener/current/venv/bin/python -m uvicorn screener.web:create_app --factory \
+    --app-dir /opt/company-screener/current/src \
+    --host 127.0.0.1 --port 8001 \
+    --proxy-headers --forwarded-allow-ips 127.0.0.1 \
+    --limit-concurrency 32 --timeout-keep-alive 5 --no-server-header
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+# Resources. Pages are parsed in a child process in this same cgroup. Peak of the whole
+# cgroup for the largest job on the server: 149 MB (app, resource tracker and parser;
+# transient unit with these limits, 2026-11-25, 23:07 UTC).
+# No MemoryHigh on purpose: without swap, the server check showed a process above it
+# being throttled into a hang (263 MB, never reaching MemoryMax). With MemoryMax alone the
+# kernel kills only this service, and Restart=on-failure brings it back.
+MemoryMax=300M
+MemorySwapMax=0
+CPUQuota=50%
+CPUWeight=20
+IOWeight=20
+Nice=10
+TasksMax=64
+LimitNOFILE=1024
+
+# Hardening: read-only system, no home directories, no privileges.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
