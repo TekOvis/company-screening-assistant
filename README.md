@@ -331,7 +331,8 @@ the quality of a model. How the real model did is in the saved evaluation report
 
 ## AI-assisted development
 
-This project was built with an AI coding assistant, Claude Code by Anthropic.
+This project was built with AI coding assistants: mostly Claude Code by Anthropic, with a
+smaller part by Codex.
 
 - **The author (Ihnat Hordiienko)** defined the task, requirements and constraints, chose
   the provider and model, and decided between options at each review checkpoint. For
@@ -343,11 +344,16 @@ This project was built with an AI coding assistant, Claude Code by Anthropic.
   keeping the CPU and page-size limits, rolling back Caddy by removing only the demo's
   block, and an isolated HTML parser that a time limit can stop. For the evaluation: the
   geography rule for labels and the three label changes that follow from it.
-- **The assistant** wrote the code, tests, synthetic evaluation cases with their expected
-  answers, the deployment scripts and this documentation. It ran the local checks: tests,
-  linting, mock evaluation and manual smoke tests against public websites. With the
-  author's approval for each step, it also installed the demo on the server and ran the
-  load and memory checks there. Commits carry a `Co-Authored-By: Claude` trailer.
+- **The assistant (Claude Code)** wrote the code, tests, synthetic evaluation cases with
+  their expected answers, the deployment scripts and this documentation. It ran the local
+  checks: tests, linting, mock evaluation and manual smoke tests against public websites.
+  With the author's approval for each step, it also installed the demo on the server and
+  ran the load and memory checks there. Its commits carry a `Co-Authored-By: Claude`
+  trailer.
+- **A second AI assistant (Codex)** gave remarks on the label review and made two commits
+  without that trailer: the README example updated to the agreed geography rule, and the
+  GitHub Actions pinned to release commits. It also published the branches and opened the
+  pull request.
 - **Not done yet:**
   - an independent code review;
   - an independent manual check of the evaluation material by a person. The author agreed
