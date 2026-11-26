@@ -205,11 +205,12 @@ Each report also states the backend and how it is billed:
   reference only. Actual billing is not confirmed by this report."
 
 **Current results**, on the synthetic set only:
-- **Mock run:** 10/20 with the current labels (13/20 before the label change). It only
-  shows that the pipeline works end to end; keyword rules are not a model.
+- **Mock run:** 13/20 with the current labels and the agreed geography rule (commit
+  `87084cc`). It only shows that the pipeline works end to end; keyword rules are not a
+  model.
 - **Claude Code, full set** (2026-11-25, `claude-sonnet-5-5`, effort `low`). Two runs,
-  both kept in [`eval/results/`](eval/results). They were scored against the labels of
-  that time:
+  both kept in [`eval/results/`](eval/results). They used the **earlier** geography rule
+  and were scored against the labels of that time:
   - **Run 1** stopped after 14 of 20 cases because of a budget bug in the evaluation
     runner. All 14 processed cases got the expected label.
   - **Run 2**, after the fix: all 20 cases processed, all 20 final labels equal the
@@ -217,9 +218,10 @@ Each report also states the backend and how it is billed:
     model reported, the checks did not confirm 6; none was left unconfirmed in the final
     output. Median 12 s per case, 81 model requests. API-equivalent $0.46, for reference
     only.
-  - **Under the labels changed on 2026-11-26,** run 2's final labels match in 17 of 20
-    cases (run 1: 11 of 20). The model answered `non_fit` for cases 03, 12 and 13, as the
-    prompt's geography rule says. That rule has not been aligned with the new labels yet.
+  - **Recomputed separately** from the same saved answers against the labels changed on
+    2026-11-26: run 2 matches in 17 of 20 cases (run 1: 11 of 20). The model answered
+    `non_fit` for cases 03, 12 and 13, as the earlier prompt said. The app has applied the
+    agreed rule since `87084cc`; no model run with it yet.
 
   Even 100% on these easy synthetic pages, written alongside the prompts, does not mean
   the same accuracy on real websites. The description rule changed after these runs, and
@@ -293,8 +295,10 @@ the quality of a model. How the real model did is in the saved evaluation report
   subdomains are blocked for tool calls.
 - The second check is an LLM too and can be wrong. Quotes are verified by code, but their
   meaning is not proven.
-- Geography means where the company itself is located. Whether a place belongs to a
-  region (for example "DACH") is judged by the model.
+- Geography means where the company itself is located. One confirmed own site in the
+  region is enough. A company counts as outside the region only if the text says it has
+  no own site there; a headquarters elsewhere alone gives "unknown". Whether a place
+  belongs to a region (for example "DACH") is judged by the model and the verifier.
 - Exclusions are judged only on what the pages state.
 - The `claude_code` backend is for personal local use: it needs an installed, logged-in
   Claude Code and must not serve other people.

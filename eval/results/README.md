@@ -27,8 +27,14 @@ charge" and "not an actual charge". The correct statement is:
 prove that no paid extra usage occurred. The files' content is left as written, so the
 original output stays verifiable.
 
-**Scored against the labels of that time.** On 2026-11-26 the expected labels of cases 03,
-12 and 13 changed from `non_fit` to `insufficient_information`. These files still hold
-the old labels in `expected`, and their scores use them. Under the current labels, run 2's
-final labels match in 17 of 20 cases and run 1's in 11 of 20. See the change log in
-[docs/evaluation.md](../../docs/evaluation.md#expected-answers).
+**Earlier rules.** Both runs used the earlier geography rule: in the prompt and the
+evidence check, own sites elsewhere meant `not_met`. They are scored against the labels of
+2026-11-25: the files hold those labels in `expected`, and their scores use them.
+
+**Recomputed separately (2026-11-26).** The same saved answers, without a new run, against
+the current labels (cases 03, 12 and 13 are now `insufficient_information`):
+- run 2: final labels 0.85 (17/20), macro-F1 0.86;
+- run 1: final labels 0.55 (11/20), macro-F1 0.64.
+
+The answers themselves still follow the earlier rule. See
+[docs/evaluation.md](../../docs/evaluation.md#full-set-through-claude-code-2026-11-25).

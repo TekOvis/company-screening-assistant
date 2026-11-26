@@ -110,27 +110,28 @@ hand-computed examples.
 
 ## Results
 
-### Mock run, pipeline check only (2026-11-25)
+### Mock runs, pipeline check only
 
-This run uses keyword rules, not a model. It confirms that all 20 cases pass through the
+These runs use keyword rules, not a model. They confirm that all 20 cases pass through the
 whole pipeline offline: fetching saved pages, the tool loop, schema validation, both
-verification stages, the label rules and the reports.
+verification stages, the label rules and the reports. Nothing is billed; tokens are
+estimates.
 
-| Metric | Value |
-|---|---|
-| Final label accuracy | 0.65 (13/20) |
-| Macro-F1 | 0.65 |
-| Schema-valid final answers | 20 of 20 |
-| Locations invented or taken from traps | none |
-| Tokens and cost | estimates only, nothing billed |
+| Date | Code | Labels | Geography rule in prompt, checks and mock | Accuracy | Macro-F1 |
+|---|---|---|---|---|---|
+| 2026-11-25 | before the label change | of 2026-11-25 | earlier: sites elsewhere mean `not_met` | 0.65 (13/20) | 0.65 |
+| 2026-11-26 | `2ebe8f7` | of 2026-11-26 | earlier | 0.50 (10/20) | 0.47 |
+| **2026-11-26** | **`87084cc`** | **of 2026-11-26** | **agreed rule** | **0.65 (13/20)** | **0.57** |
 
-The misses are what keyword rules cannot do: understand "distributor" or "bakery vs
-valves", read German or Polish text, or decide to fetch an About page to look for
-ownership. These numbers say nothing about a real model.
-
-**With the labels changed on 2026-11-26:** 0.50 (10/20), macro-F1 0.47. The three changed
-cases (03, 12, 13) are now misses: like the prompt, the mock treats a stated own location
-outside the target region as "not met" and answers `non_fit`.
+In every run: 20 of 20 final answers schema-valid, no location invented or taken from a
+trap.
+- **Second row.** Under the earlier rule the mock answered `non_fit` for the three
+  relabelled cases (03, 12, 13), so they were misses.
+- **Last row** (report: code `87084cc5063e`, prompts sha256 `8c27e02cff37`, dataset sha256
+  `60a1c455b67c`). Those three now come out `insufficient_information`, as labelled.
+- **The remaining 7 misses** are what keyword rules cannot do: understand "distributor" or
+  "bakery vs valves", read German or Polish text, or decide to fetch an About page to look
+  for ownership. These numbers say nothing about a real model.
 
 ### Claude Code, one case (2026-11-25)
 
@@ -165,13 +166,24 @@ Two runs of the whole set. Both used:
 Between the runs only the evaluation runner's budget changed; prompts, cases and label
 rules did not. Both runs are kept unchanged in [`eval/results/`](../eval/results).
 
-**Scored against the expected answers of that time.** On 2026-11-26 the labels of cases
-03, 12 and 13 changed from `non_fit` to `insufficient_information` (see the
-[change log](#expected-answers)). In both runs the model answered `non_fit` for those
-three, with geography `not_met`, as the prompt's rule says. Under the current labels,
-final labels would match in 17 of 20 cases in run 2 and 11 of 20 in run 1. That figure
-comes from the saved answers, without a new run. The tables below keep the original
-scoring.
+**These runs used the earlier rules.**
+- **Geography rule:** in the prompt and the evidence check, own sites elsewhere meant
+  `not_met`.
+- **Scoring:** against the labels of 2026-11-25.
+
+The tables below keep that original scoring unchanged. In both runs the model answered
+`non_fit` for cases 03, 12 and 13, with geography `not_met`, as that prompt said. No run
+with the agreed rule (`87084cc`) has been made yet.
+
+**Recomputed on 2026-11-26, separately from the original scoring.** The same saved
+answers, without a new run, against the current labels. The model's answers are still
+those of the earlier rule.
+
+| Recomputed | Run 1 | Run 2 |
+|---|---|---|
+| Final label: accuracy / macro-F1 (missing label = wrong) | 0.55 (11/20) / 0.64 | 0.85 (17/20) / 0.86 |
+| Model's own label: accuracy / macro-F1 | 0.60 (12/20) / 0.69 | 0.85 (17/20) / 0.86 |
+| Changed cases | 03, 12, 13: expected `insufficient_information`, answered `non_fit` | same |
 
 | | Run 1 | Run 2 |
 |---|---|---|
@@ -284,9 +296,9 @@ written or reviewed by someone else, are the next step.
   Nobody has checked the source material independently.
 - Three labels were changed after both full model runs had been seen. The review table
   left model results out, but the set is not blind.
-- The prompt and the mock still apply the earlier geography rule: stated own locations
-  outside the target region mean "not met". On cases 03, 12 and 13 the system is
-  therefore expected to disagree with the labels until the prompt is aligned.
+- Since `87084cc` the prompt, the evidence check and the mock apply the agreed geography
+  rule. The saved Claude Code runs predate it, and no model run with it has been made
+  yet. Whether the model follows the new instructions is not measured.
 - The model is not deterministic. The 14 cases that completed in both runs got the same
   labels both times, but tool use and request counts differed. Two runs are too few to
   measure the variance.
@@ -319,6 +331,7 @@ such a change are not independent of development.
 | 2026-11-25 | `7880ef4` | Evidence check: the description may rest on quotes the model filed under "business", not only under "description". The claim text sent to the verifier now says that the quotes must state every statement in the description. The verifier prompt gained two rules: a partly stated description, or a quote that only names the company, does not support it; promotional or self-assessing wording is not an established fact. Name quotes are never used for the description | **Observed during development on case 01**, the first one-case Claude Code check: the model quoted the right sentence but filed it under business and name, so the description was removed. The project owner chose this option. It is not meant to fix the 5 descriptions removed in run 2: there the quotes stated only part of the description, and such descriptions are still rejected |
 
 | 2026-11-25 | the commit after `7880ef4` | Reports: billing wording for Claude Code; unconfirmed facts before and after the checks; code version; `--rescore` for saved runs | The old wording ("no per-token charge") claimed more than the tool can know. No effect on answers or labels |
+| 2026-11-26 | `87084cc` | **Behaviour change, geography.** Agent prompt and answer schema: `met` = a confirmed own site in the target region; `not_met` only if the text confirms there is none, with a quote under the new evidence target `geography`; sites named only elsewhere = `unknown`. Evidence check: two claims written by code with the user's region, one for each of `met` and `not_met` (see [architecture](architecture.md#evidence-verification-and-label-rules)); without a supported claim the criterion becomes `unknown`. Verifier prompt: rules for both claims. Mock: the same rule; a denied site ("no office in X") is no longer read as an own location. Prompts sha256 now `8c27e02cff37` | It implements the label rule the author agreed after the label review, as a general rule, not per case. It was made after seeing that the model, following the earlier prompt, answered `non_fit` for 03, 12 and 13. The tests use their own made-up companies; nothing depends on case ids, names or expected labels |
 
 The `7880ef4` change touches the verifier prompt, so the prompts fingerprint changes. Its effect
 on this set is **not measured yet**. It cannot be recomputed from the saved answers,

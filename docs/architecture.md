@@ -132,7 +132,17 @@ second check agreed", not proof. A missing verdict counts as not supported.
 - A fact stays only if its claim is supported.
 - A criterion keeps `met` or `not_met` only if its facts were verified; otherwise it
   becomes `unknown`.
-- Geography uses own locations only.
+- Geography uses own sites only, by the rule agreed on 2026-11-26 (since `87084cc`). The
+  code writes two extra claims with the user's region:
+
+  | Model's geography | Extra claim checked | Kept only if |
+  |---|---|---|
+  | `met` | "the company has an own site in the target region", with the location quotes | an own location is verified **and** this claim is supported |
+  | `not_met` | "the company has no own site in the target region", with the quotes filed under `geography` | this claim is supported |
+
+  Sites named only elsewhere do not support the second claim: the text may not list every
+  site. So a headquarters abroad alone gives `unknown`, not `not_met`. Whether a place lies
+  in the region (for example in "DACH") is judged by the model and the verifier.
 
 | Verified situation | Label |
 |---|---|

@@ -49,6 +49,9 @@ languages or domains do not count. Exclusions are judged only on what the text s
 - **Otherwise unknown.** Negative statements are not added to the pages just to keep a
   `non_fit` label.
 
+The app applies the same rule since commit `87084cc`: in the agent prompt, the evidence
+check and the mock. The saved model runs in [`results/`](results) predate it.
+
 ## Case format
 
 One JSON file per case, `<id>.json`:
