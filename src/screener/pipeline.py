@@ -79,6 +79,7 @@ async def screen_company(
             verified = await verify_assessment(
                 outcome.assessment,
                 outcome.pages,
+                target_geography=criteria.geography,
                 client=client,
                 settings=settings,
                 budget=budget,

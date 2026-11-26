@@ -99,7 +99,13 @@ async def _verify(answer, judge):
     client = FakeAnthropicClient([_scripted_verifier(judge)])
     budget = CompanyBudget.from_settings(RunBudget.from_settings(settings), settings)
     verified = await verify_assessment(
-        answer, {page.url: page}, client=client, settings=settings, budget=budget, usage=Usage()
+        answer,
+        {page.url: page},
+        target_geography="Germany",
+        client=client,
+        settings=settings,
+        budget=budget,
+        usage=Usage(),
     )
     return verified, client
 

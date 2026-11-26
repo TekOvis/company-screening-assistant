@@ -22,7 +22,15 @@ from typing import Any
 
 from anthropic.types import Message
 
-from .schemas import Assessment, CriterionStatus, EvidenceItem, FitLabel, ScreeningCriteria
+from .schemas import (
+    GEOGRAPHY_NO_SITE_CLAIM,
+    GEOGRAPHY_SITE_CLAIM,
+    Assessment,
+    CriterionStatus,
+    EvidenceItem,
+    FitLabel,
+    ScreeningCriteria,
+)
 
 MOCK_MODEL_NAME = "mock-heuristic"
 _message_ids = itertools.count(1)
@@ -50,6 +58,17 @@ _MARKET_WORD_RE = re.compile(
     r"ship(?:s|ping)?|partners?|distributors?|resellers?|fairs?|exhibitions?)\b",
     re.IGNORECASE,
 )
+# "We have no office in Germany": a statement that there is no own site at a place.
+_NO_SITE_RE = re.compile(
+    r"\b(?i:no|not|never|without)\b[^.;]*?\b(?i:offices?|sites?|plants?|factor(?:y|ies)|"
+    r"facilit(?:y|ies)|warehouses?|branch(?:es)?|subsidiar(?:y|ies)|presence|locations?)\b"
+    r"[^.;]*?\bin\s+" + _PLACE
+)
+# "Our only office is in Riga": the named sites are the complete list.
+_ONLY_RE = re.compile(
+    r"\b(?:only|sole|solely|exclusively)\b|\ball\s+(?:of\s+)?(?:our|its)\b", re.IGNORECASE
+)
+_NEGATION_RE = re.compile(r"\b(?:no|not|never|without)\b|n't\b", re.IGNORECASE)
 _HELPFUL_PATH_RE = re.compile(
     r"about|company|contact|location|office|who-we-are|team|imprint|impressum", re.I
 )
@@ -306,10 +325,19 @@ def _assess(context: _Context) -> Assessment:
             markets.extend(p for p in served if p not in markets)
             claim = f"The company serves customers in {', '.join(served)}."
             evidence.append(_evidence("market_served", claim, url, sentence))
+    # Geography by the agreed rule: one own site in the region is enough; "not_met" only if
+    # the text says there is none; sites named elsewhere alone leave it unknown.
     allowed = _allowed_places(criteria.geography)
     geography_match: CriterionStatus = "unknown"
-    if locations:
-        geography_match = "met" if any(_place_matches(p, allowed) for p in locations) else "not_met"
+    if any(_place_matches(p, allowed) for p in locations):
+        geography_match = "met"
+    else:
+        for url, sentence in content_sentences:
+            if _states_no_site(sentence, allowed):
+                geography_match = "not_met"
+                claim = f"The company has no own site in {criteria.geography}."
+                evidence.append(_evidence("geography", claim, url, sentence))
+                break
 
     # Exclusions: every content word of one exclusion item appears in one sentence.
     exclusion_triggered = False
@@ -372,6 +400,19 @@ def _judge(item: dict[str, Any]) -> dict[str, Any]:
         if any(_same_place(value, p) for p in served):
             return verdict("not_supported", f"serving customers in {value} is not a location")
         return verdict("not_supported", f"no statement that the company is located in {value}")
+    if field == GEOGRAPHY_SITE_CLAIM:
+        allowed = _allowed_places(value)
+        own = [p for q in quotes for s in _sentences(q) for p in _own_locations(s)]
+        if any(_place_matches(p, allowed) for p in own):
+            return verdict("supported", "the quotes state an own site in the target region")
+        return verdict("not_supported", "no own site in the target region is stated")
+    if field == GEOGRAPHY_NO_SITE_CLAIM:
+        allowed = _allowed_places(value)
+        if any(_states_no_site(s, allowed) for q in quotes for s in _sentences(q)):
+            return verdict("supported", "the quotes say there is no own site in the region")
+        return verdict(
+            "not_supported", "the quotes do not say that there is no own site in the region"
+        )
     if field == "market_served":
         served = [p for q in quotes for s in _sentences(q) for p in _markets(s)]
         if any(_same_place(value, p) for p in served):
@@ -398,8 +439,26 @@ def _own_locations(sentence: str) -> list[str]:
         # "Our customers are located in X" is about customers, not about the company.
         if _MARKET_WORD_RE.search(before) or _MARKET_WORD_RE.search(match.group(0)):
             continue
+        # "We have no office in X" says the opposite (only the current clause counts).
+        if _NEGATION_RE.search(re.split(r"[;,:]", before)[-1]):
+            continue
         places.extend(_split_places(match.group(1)))
     return places
+
+
+def _states_no_site(sentence: str, allowed: set[str]) -> bool:
+    """The sentence confirms that the company has no own site in the target region: "we
+    have no office in Germany", or "our only office is in Riga" (a complete list, none of
+    it in the region). Sites merely named elsewhere do not count."""
+    for match in _NO_SITE_RE.finditer(sentence):
+        if any(_place_matches(p, allowed) for p in _split_places(match.group(1))):
+            return True
+    own = _own_locations(sentence)
+    return (
+        bool(own)
+        and bool(_ONLY_RE.search(sentence))
+        and not any(_place_matches(p, allowed) for p in own)
+    )
 
 
 def _markets(sentence: str) -> list[str]:

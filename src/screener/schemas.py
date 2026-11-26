@@ -31,7 +31,12 @@ EvidenceTarget = Literal[
     "market_served",
     "business",
     "exclusion",
+    "geography",  # only for "not_met": the text confirms no own site in the target region
 ]
+# Geography claims the evidence check writes itself (verify.build_claims). The mock
+# verifier recognises them by these field names.
+GEOGRAPHY_SITE_CLAIM = "geography_site"  # an own site lies in the target region
+GEOGRAPHY_NO_SITE_CLAIM = "geography_no_site"  # the text confirms no own site there
 CheckStatus = Literal[
     "supported",  # passed stage 1 and the verifier agreed (not a proof)
     "not_supported",  # the verifier said the quote does not state the claim
@@ -123,7 +128,11 @@ class Assessment(BaseModel):
     )
     industry_match: CriterionStatus
     geography_match: CriterionStatus = Field(
-        description="Target geography vs company_locations only; markets served do not count."
+        description=(
+            "met: an own site is in the target geography. not_met: only if the text confirms "
+            "that the company has no own site there. Otherwise unknown, also when only sites "
+            "elsewhere are stated. Markets served do not count."
+        )
     )
     business_match: CriterionStatus
     exclusion_triggered: bool

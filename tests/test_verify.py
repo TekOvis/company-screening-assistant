@@ -63,15 +63,21 @@ def _answer(**overrides) -> Assessment:
     return Assessment.model_validate(base)
 
 
-async def _verify(answer, client=None, **settings_overrides):
+async def _verify(answer, client=None, *, html=HOME_HTML, region="Austria", **settings_overrides):
     settings = make_settings(**settings_overrides)
-    fetcher = FixtureFetcher({HOME: HOME_HTML}, settings)
+    fetcher = FixtureFetcher({HOME: html}, settings)
     page = await fetcher.fetch(HOME)
     client = client or FakeAnthropicClient()  # mock verifier: keyword rules
     budget = CompanyBudget.from_settings(RunBudget.from_settings(settings), settings)
     usage = Usage()
     verified = await verify_assessment(
-        answer, {page.url: page}, client=client, settings=settings, budget=budget, usage=usage
+        answer,
+        {page.url: page},
+        target_geography=region,
+        client=client,
+        settings=settings,
+        budget=budget,
+        usage=usage,
     )
     return verified, client, usage
 
@@ -104,12 +110,15 @@ def test_stage_one_checks_page_and_verbatim_quote():
 
 
 @pytest.mark.anyio
-async def test_verified_facts_and_a_verified_mismatch_give_non_fit():
+async def test_verified_facts_are_kept_and_a_site_elsewhere_is_no_mismatch():
+    """The model says "not_met" because the headquarters are elsewhere. Under the agreed
+    geography rule that is not enough: the text may not list every site."""
     verified, client, usage = await _verify(_answer())
     assert verified.company_locations == ["Brno", "Czechia"]
     assert verified.markets_served == ["Austria"]
-    assert verified.geography_match == "not_met"
-    assert verified.fit == "non_fit"
+    assert verified.geography_match == "unknown"
+    assert verified.fit == "insufficient_information"
+    assert any("Sites named elsewhere are not enough" in w for w in verified.warnings)
     assert len(client.requests) == 1  # all claims checked in ONE request
     assert usage.llm_calls == 1
 

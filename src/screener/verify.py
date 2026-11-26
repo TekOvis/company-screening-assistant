@@ -12,6 +12,13 @@ test double in mock mode) and can be wrong too: "supported" means "a second, ind
 check agreed", not "proven".
 Finally, facts without supported evidence are removed and the label is recomputed by the
 explicit rules in decide_label(), so an unverified fact can never produce fit or non_fit.
+
+Geography (rule agreed on 2026-11-26):
+  * met     — a verified own site, and the check agrees that an own site lies in the
+              target region;
+  * not_met — only with a verified statement that the company has NO own site there;
+              own sites named elsewhere are not enough, the text may not list them all;
+  * unknown — everything else.
 """
 
 from __future__ import annotations
@@ -29,6 +36,8 @@ from .fetcher import FetchedPage
 from .llm import LLMCallError, call_llm, final_text, refusal_message
 from .prompts import VERIFIER_PROMPT, render_claims
 from .schemas import (
+    GEOGRAPHY_NO_SITE_CLAIM,
+    GEOGRAPHY_SITE_CLAIM,
     Assessment,
     CheckedEvidence,
     CheckStatus,
@@ -43,6 +52,7 @@ from .schemas import (
 
 VERIFIER_SCHEMA: dict[str, Any] = anthropic.transform_schema(VerifierOutput)
 MAX_QUOTES_PER_CLAIM = 3
+MAX_REGION_QUOTES = 5  # location quotes for the target-region claim: any one may be the site
 MAX_STATEMENTS_PER_KIND = 3  # business / exclusion statements checked per company
 _VALUE_FIELDS = ("company_name", "company_location", "market_served")
 _CHAR_FIXES = str.maketrans(
@@ -134,14 +144,17 @@ async def verify_assessment(
     assessment: Assessment,
     pages: dict[str, FetchedPage],
     *,
+    target_geography: str,
     client: Any,
     settings: Settings,
     budget: CompanyBudget,
     usage: Usage,
 ) -> VerifiedAssessment:
-    """Raises VerificationError, or BudgetExceeded if the check would not fit the budget."""
+    """Raises VerificationError, or BudgetExceeded if the check would not fit the budget.
+
+    ``target_geography`` is the user's geography criterion, for the region claims."""
     evidence = check_quotes(assessment.evidence, pages)  # stage 1
-    claims = build_claims(assessment, evidence)
+    claims = build_claims(assessment, evidence, target_geography)
     checkable = [claim for claim in claims if claim.evidence_ids]
     to_check = checkable[: settings.max_claims_to_verify]
     for claim in checkable[settings.max_claims_to_verify :]:
@@ -186,7 +199,9 @@ def check_quotes(items: list[EvidenceItem], pages: dict[str, FetchedPage]) -> li
     return checked
 
 
-def build_claims(assessment: Assessment, evidence: list[CheckedEvidence]) -> list[Claim]:
+def build_claims(
+    assessment: Assessment, evidence: list[CheckedEvidence], target_geography: str
+) -> list[Claim]:
     """Turn every reported fact into a claim with the stage-1-valid quotes behind it.
 
     Claim texts are written by the code, not taken from the model: e.g. a location is
@@ -218,6 +233,27 @@ def build_claims(assessment: Assessment, evidence: list[CheckedEvidence]) -> lis
                 quotes_for("company_location", place),
             )
         )
+    # The geography judgment itself, as the agreed rule states it.
+    region = target_geography.strip()
+    if a.geography_match == "met":
+        text = (
+            "The company itself has its headquarters, an office, a plant or another facility "
+            f"of its own in the target region: {region}."
+        )
+        location_ids = [
+            i
+            for i, e in enumerate(evidence)
+            if e.supports == "company_location" and e.check == "not_checked"
+        ]
+        ids = _distinct_quotes(evidence, location_ids)[:MAX_REGION_QUOTES]
+        claims.append(Claim(GEOGRAPHY_SITE_CLAIM, region, text, ids))
+    elif a.geography_match == "not_met":
+        text = (
+            "The company has no headquarters, office, plant or other facility of its own in "
+            f"the target region: {region}. The quotes must state this; sites named elsewhere "
+            "are not enough."
+        )
+        claims.append(Claim(GEOGRAPHY_NO_SITE_CLAIM, region, text, quotes_for("geography")))
     if a.industry:
         text = f"The company works in this industry: {a.industry}."
         claims.append(Claim("industry", a.industry, text, quotes_for("industry")))
@@ -349,7 +385,7 @@ def apply_rules(
     industry_match = _confirm(
         a.industry_match, industry is not None or description is not None, "Industry", warnings
     )
-    geography_match = _confirm(a.geography_match, bool(locations), "Geography", warnings)
+    geography_match = _confirm_geography(a.geography_match, claims, bool(locations), warnings)
     business_match = _confirm(a.business_match, business_supported, "Business", warnings)
     exclusion: ExclusionStatus
     if not a.exclusion_triggered:
@@ -391,6 +427,30 @@ def _confirm(
     if status == "unknown" or has_verified_facts:
         return status
     warnings.append(f"{label} criterion '{status}' set to unknown: its facts were not verified.")
+    return "unknown"
+
+
+def _confirm_geography(
+    status: CriterionStatus, claims: list[Claim], has_verified_site: bool, warnings: list[str]
+) -> CriterionStatus:
+    """Geography after the checks, by the agreed rule (see the module docstring)."""
+
+    def supported(field: str) -> bool:
+        return any(c.field == field and c.supported for c in claims)
+
+    if status == "met":
+        if has_verified_site and supported(GEOGRAPHY_SITE_CLAIM):
+            return "met"
+        warnings.append(
+            "Geography criterion 'met' set to unknown: no verified own site in the target region."
+        )
+    elif status == "not_met":
+        if supported(GEOGRAPHY_NO_SITE_CLAIM):
+            return "not_met"
+        warnings.append(
+            "Geography criterion 'not_met' set to unknown: no verified statement that the "
+            "company has no own site in the target region. Sites named elsewhere are not enough."
+        )
     return "unknown"
 
 

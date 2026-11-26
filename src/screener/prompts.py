@@ -50,10 +50,17 @@ they are not needed for the output.
 - industry_match and business_match: "met" only if evidence explicitly shows the \
 criterion is satisfied; "not_met" only if evidence explicitly shows it is not; otherwise \
 "unknown".
-- geography_match: compare the target geography with company_locations only. "met" if one \
-of the company's own locations is in the target geography; "not_met" if its own \
-locations are stated and none is in it; "unknown" if no own location is stated. Markets \
-served never decide this criterion.
+- geography_match: compare the target geography with the company's own sites only \
+(headquarters, offices, plants, warehouses or other own facilities):
+  - "met" if the text confirms at least one own site in the target geography. Any one \
+is enough; it need not be the headquarters.
+  - "not_met" only if the text explicitly confirms that the company has no own site in \
+the target geography: for example, it says it has no office there, or that the sites it \
+names, all outside the target geography, are its only ones.
+  - "unknown" otherwise. Own sites named outside the target geography do NOT make it \
+"not_met" by themselves: the text may not list every site. Also "unknown" if no own site \
+is stated.
+  - Markets served, events and indirect signals never decide this criterion.
 - exclusion_triggered: true only if evidence explicitly shows that one of the user's \
 exclusions applies.
 - fit: "non_fit" if any criterion is not_met or an exclusion is triggered; "fit" if all \
@@ -66,6 +73,9 @@ triggered judgment with evidence items.
 at most 300 characters). Do not paraphrase, merge passages or shorten them with "...".
 - For company_name, company_location and market_served evidence the quote must contain \
 the name or place itself.
+- geography_match "met" rests on the company_location quote of the site in the target \
+geography. For "not_met", add an item with supports "geography" whose quote states that \
+the company has no own site in the target geography.
 - claim: the specific factual statement the quote supports, e.g. "The company is \
 headquartered in Lyon, France."
 - url: the url attribute of the page the quote comes from, exactly as given.
@@ -103,6 +113,13 @@ Rules:
 company has its headquarters, an office, a plant, a warehouse or another facility of its \
 own in X. Serving, selling or delivering to customers in X, partners or distributors in X, \
 events or trade fairs in X, or the website's language or domain do NOT support it.
+- A target-region claim ("the company has a facility of its own in the target region R") \
+needs a quote saying that the company has its headquarters, an office, a plant or another \
+facility of its own at a place that lies in R. A site elsewhere does not support it.
+- A no-site claim ("the company has no facility of its own in the target region R") needs \
+a quote that explicitly states this: that the company has no site in R, or that the sites \
+it names, all outside R, are its only ones. A quote that only names a headquarters or an \
+office elsewhere does NOT support it: the company may have other sites.
 - A market claim ("sells to or serves customers in X") needs a quote saying the company \
 sells, delivers or provides its services in or to X.
 - A description claim is "supported" only if the quotes, taken together, state every \

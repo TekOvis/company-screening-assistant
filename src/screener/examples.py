@@ -4,9 +4,8 @@ A visitor can try the interface without pasting real URLs. The pages come from
 eval/cases through FixtureFetcher; nothing is requested from the internet.
 
 Examples are chosen for what they illustrate, not for how well a backend does on them.
-Two of them are cases the mock's keyword rules get wrong: a distributor, and a company
-headquartered abroad, which the mock (like the prompt) treats as not located in the
-target region. The results page shows the expected label next to the result.
+One of them (a distributor) is a case the mock's keyword rules get wrong. The results
+page shows the expected label next to the result.
 """
 
 from __future__ import annotations

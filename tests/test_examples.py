@@ -62,6 +62,19 @@ def test_an_example_runs_on_saved_pages_and_shows_the_expected_label():
         assert run["results"][0]["status"] == "ok"
 
 
+def test_only_the_documented_example_is_a_mock_miss():
+    """The examples page and docs say that the mock gets exactly one example wrong."""
+    misses = []
+    with TestClient(_app()) as client:
+        for case_id in EXAMPLE_TITLES:
+            response = client.post(f"/examples/{case_id}", follow_redirects=False)
+            _wait_until_done(client, response.headers["location"])
+            run = client.get(response.headers["location"] + "/export.json").json()
+            if run["results"][0]["fit"] != run["example_expected"]:
+                misses.append(case_id)
+    assert misses == [MOCK_MISS_CASE]
+
+
 def test_the_example_the_mock_gets_wrong_is_shown_as_wrong():
     """Keyword rules miss 'distributor'; the page shows the expected label next to it."""
     with TestClient(_app()) as client:
